@@ -1,0 +1,19 @@
+{
+  "name": "ctech-cdk",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "aws-cdk": "^2.1126.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.258.0",
+    "constructs": "^10.6.0"
+  }
+}

@@ -1,0 +1,21 @@
+import {SSMParams} from "./types";
+
+export const DEFAULT_AWS_ACCOUNT = '868899309401';
+export const DEFAULT_AWS_REGION = 'us-east-1';
+export const DEFAULT_CERTIFICATE_ARN = 'arn:aws:acm:us-east-1:868899309401:certificate/eb8aa9cd-f7c0-4c5a-bdbe-a25c4d4b20a5';
+export const DEFAULT_GITHUB_REPO = 'artur-oliveira/ctech-cdk';
+export const SSM = {
+  global: {
+    oidcProviderArn: '/ctech/global/oidc/provider-arn',
+    certArn: '/ctech/global/acm/cert-arn',
+  },
+  network: (env: string) => ({
+    vpcId: `/ctech/${env}/network/vpc-id`,
+    albSgId: `/ctech/${env}/network/alb-sg-id`,
+  }),
+  alb: (env: string) => ({
+    arn: `/ctech/${env}/alb/arn`,
+    dnsName: `/ctech/${env}/alb/dns-name`,
+    httpsListenerArn: `/ctech/${env}/alb/https-listener-arn`,
+  }),
+} as SSMParams;

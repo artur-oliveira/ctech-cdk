@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+import * as cdk from 'aws-cdk-lib';
+
+import {GlobalStack} from '../lib/global-stack';
+import {NetworkStack} from '../lib/network-stack';
+import {AlbStack} from '../lib/alb-stack';
+import {Environment} from '../lib/types';
+import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
+
+const app = new cdk.App();
+
+// =====================
+// Constants
+// =====================
+const AWS_ACCOUNT = process.env.AWS_ACCOUNT || DEFAULT_AWS_ACCOUNT;
+const AWS_REGION = process.env.AWS_REGION || DEFAULT_AWS_REGION;
+// Wildcard cert covering *.arturocarvalho.com - used by all service ALBs.
+const CERT_ARN = process.env.AWS_CERTIFICATE_ARN || DEFAULT_CERTIFICATE_ARN;
+// GitHub OIDC provider - currently owned by py-dfe-cdk's PyDfe-Global-OIDC stack.
+// Transfer ownership here via `cdk import` when ready to consolidate.
+const OIDC_PROVIDER_ARN = `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
+const CTECH_GITHUB_REPO = process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO;
+
+const ENVIRONMENT = (process.env.ENVIRONMENT || 'dev') as Environment;
+const env = {account: AWS_ACCOUNT, region: AWS_REGION};
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// =====================
+// Global stack (deploy once per account)
+// Manages: ctech-gha-infra IAM role, SSM pointers for OIDC provider and cert.
+// =====================
+new GlobalStack(app, 'Ctech-Global', {
+  env,
+  oidcProviderArn: OIDC_PROVIDER_ARN,
+  certArn: CERT_ARN,
+  ctechGithubRepo: CTECH_GITHUB_REPO,
+  description: 'CTech account-level shared infra (OIDC ref, cert, deploy role)',
+});
+
+// =====================
+// Per-environment stacks
+// =====================
+const networkStack = new NetworkStack(app, `Ctech-${cap(ENVIRONMENT)}-Network`, {
+  env,
+  environment: ENVIRONMENT,
+  description: `CTech Shared VPC & Security Groups - ${ENVIRONMENT}`,
+});
+
+new AlbStack(app, `Ctech-${cap(ENVIRONMENT)}-ALB`, {
+  env,
+  environment: ENVIRONMENT,
+  vpc: networkStack.vpc,
+  securityGroup: networkStack.albSecurityGroup,
+  certArn: CERT_ARN,
+  description: `CTech Shared ALB - ${ENVIRONMENT}`,
+});
