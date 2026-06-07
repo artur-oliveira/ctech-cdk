@@ -86,14 +86,13 @@ export class ValkeyStack extends cdk.Stack {
 
       // ── SSM agent dual-stack ─────────────────────────────────────────────────────
       // The instance has no public IPv4 — SSM must connect via IPv6.
-      // Systemd services don't inherit /etc/environment, so we inject the env var
-      // via a drop-in override (same pattern used for the CloudWatch agent below).
-      'mkdir -p /etc/systemd/system/amazon-ssm-agent.service.d',
-      `cat > /etc/systemd/system/amazon-ssm-agent.service.d/override.conf << 'SSMDROPOUT'`,
-      '[Service]',
-      'Environment=AWS_USE_DUALSTACK_ENDPOINT=true',
-      'SSMDROPOUT',
-      'systemctl daemon-reload',
+      // The agent reads UseDualStackEndpoint from its own JSON config, not from
+      // AWS_USE_DUALSTACK_ENDPOINT (which only applies to the CLI/SDK).
+      'mkdir -p /etc/amazon/ssm',
+      `cat > /etc/amazon/ssm/amazon-ssm-agent.json << 'SSM'`,
+      `{ "Agent": { "UseDualStackEndpoint": true } }`,
+      `SSM`,
+      'systemctl enable amazon-ssm-agent',
       'systemctl restart amazon-ssm-agent',
 
       // ── Valkey config ───────────────────────────────────────────────────────────
