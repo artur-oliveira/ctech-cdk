@@ -96,7 +96,7 @@ export class ValkeyStack extends cdk.Stack {
       'systemctl restart amazon-ssm-agent',
 
       // ── Valkey config ───────────────────────────────────────────────────────────
-      // Pure cache mode: no persistence, LRU eviction, 16 DBs for service isolation.
+      // Pure cache mode: no persistence, LRU eviction, 128 DBs for service isolation.
       // SG-level security replaces bind restriction; protected-mode disabled.
       `cat > /etc/valkey/valkey.conf << 'VALKEYCONF'`,
       'bind 0.0.0.0 ::',
@@ -104,7 +104,7 @@ export class ValkeyStack extends cdk.Stack {
       'port 6379',
       'daemonize no',
       'loglevel notice',
-      'databases 16',
+      'databases 128',
       'save ""',
       'appendonly no',
       'maxmemory 512mb',
