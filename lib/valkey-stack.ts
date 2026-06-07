@@ -81,14 +81,14 @@ export class ValkeyStack extends cdk.Stack {
 
     userData.addCommands(
       'set -euo pipefail',
-      'dnf install -y valkey amazon-cloudwatch-agent amazon-ssm-agent',
+      'dnf install -y valkey amazon-cloudwatch-agent amazon-ssm-agent cronie',
+      'systemctl enable --now crond',
+      // ── System-wide dual-stack endpoint (SSM agent, CW agent, boto3 CLI) ────
       'echo "AWS_USE_DUALSTACK_ENDPOINT=true" >> /etc/environment',
 
-      // ── SSM agent dual-stack ─────────────────────────────────────────────────────
-      // The instance has no public IPv4 — SSM must connect via IPv6.
-      // The agent reads UseDualStackEndpoint from its own JSON config, not from
-      // AWS_USE_DUALSTACK_ENDPOINT (which only applies to the CLI/SDK).
-      'mkdir -p /etc/amazon/ssm',
+      // ── SSM agent: force IPv6 dual-stack endpoint ────────────────────────────
+      // Without this the SSM agent fails to connect when the instance has no public IPv4.
+      `mkdir -p /etc/amazon/ssm`,
       `cat > /etc/amazon/ssm/amazon-ssm-agent.json << 'SSM'`,
       `{ "Agent": { "UseDualStackEndpoint": true } }`,
       `SSM`,
@@ -157,7 +157,8 @@ export class ValkeyStack extends cdk.Stack {
       '  --metric-data "[{\\\"MetricName\\\":\\\"ConnectedClients\\\",\\\"Dimensions\\\":[{\\\"Name\\\":\\\"InstanceId\\\",\\\"Value\\\":\\\"$INSTANCE_ID\\\"}],\\\"Value\\\":${CLIENTS:-0},\\\"Unit\\\":\\\"Count\\\"},{\\\"MetricName\\\":\\\"UsedMemoryBytes\\\",\\\"Dimensions\\\":[{\\\"Name\\\":\\\"InstanceId\\\",\\\"Value\\\":\\\"$INSTANCE_ID\\\"}],\\\"Value\\\":${MEM:-0},\\\"Unit\\\":\\\"Bytes\\\"}]"',
       'METRICS',
       'chmod +x /opt/valkey-metrics.sh',
-      '(crontab -l 2>/dev/null; echo "* * * * * root /opt/valkey-metrics.sh") | crontab -',
+      'echo "* * * * * root /opt/valkey-metrics.sh" > /etc/cron.d/valkey-metrics',
+      'chmod 644 /etc/cron.d/valkey-metrics',
 
       // ── Register private IP in SSM (no DB - consumers append /0, /1, etc.) ───────
       `cat > /opt/register-valkey.sh << 'REG'`,
@@ -172,7 +173,8 @@ export class ValkeyStack extends cdk.Stack {
       'REG',
       'chmod +x /opt/register-valkey.sh',
       'bash /opt/register-valkey.sh',
-      '(crontab -l 2>/dev/null; echo "@reboot root /opt/register-valkey.sh") | crontab -',
+      'echo "@reboot root /opt/register-valkey.sh" > /etc/cron.d/valkey-register',
+      'chmod 644 /etc/cron.d/valkey-register',
     );
 
     // ── Launch Template ───────────────────────────────────────────────────────
