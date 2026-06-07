@@ -1,6 +1,6 @@
 # ctech-cdk
 
-AWS CDK (TypeScript) for account-level shared infrastructure. Owns the VPC, shared ALB, and GitHub Actions OIDC deploy role used by all CTech services. Service CDKs (py-dfe-cdk, etc.) consume these resources via SSM Parameter Store — they never depend on this repo's CloudFormation stacks directly.
+AWS CDK (TypeScript) for account-level shared infrastructure. Owns the VPC, shared ALB, and GitHub Actions OIDC deploy role used by all CTech services. Service CDKs (py-dfe-cdk, etc.) consume these resources via SSM Parameter Store - they never depend on this repo's CloudFormation stacks directly.
 
 ---
 
@@ -19,7 +19,7 @@ Ctech-{Env}-Network              (per environment: dev / stage / prod)
 Ctech-{Env}-ALB                  (per environment)
   └── Application Load Balancer (dual-stack, no public IPv4)
   └── HTTP → HTTPS redirect listener
-  └── HTTPS listener (default: 503 — service rules added by each service CDK)
+  └── HTTPS listener (default: 503 - service rules added by each service CDK)
   └── SSM: /ctech/{env}/alb/...
 ```
 
@@ -33,7 +33,7 @@ Ctech-{Env}-ALB                  (per environment)
 | `/ctech/{env}/network/alb-sg-id` | ALB security group ID |
 | `/ctech/{env}/alb/arn` | ALB ARN |
 | `/ctech/{env}/alb/dns-name` | ALB DNS name |
-| `/ctech/{env}/alb/https-listener-arn` | HTTPS listener ARN — used by service CDKs to attach listener rules |
+| `/ctech/{env}/alb/https-listener-arn` | HTTPS listener ARN - used by service CDKs to attach listener rules |
 
 `{env}` is `dev`, `stage`, or `prod`.
 
@@ -48,7 +48,7 @@ Service CDKs read from SSM at deploy time:
 const albSgId = ssm.StringParameter.valueForStringParameter(this, `/ctech/${env}/network/alb-sg-id`);
 const listenerArn = ssm.StringParameter.valueForStringParameter(this, `/ctech/${env}/alb/https-listener-arn`);
 
-// VPC ID: must be a concrete string at synth time — read via env var populated from SSM in CI
+// VPC ID: must be a concrete string at synth time - read via env var populated from SSM in CI
 const vpc = ec2.Vpc.fromLookup(this, 'Vpc', { vpcId: process.env.CTECH_VPC_ID });
 ```
 
@@ -74,7 +74,7 @@ Each service creates its own security group with ingress from the ALB SG, then a
 - AWS CLI configured with credentials that have `AdministratorAccess`
 - CDK bootstrapped in the target account: `npx cdk bootstrap aws://868899309401/us-east-1`
 
-### First-time bootstrap (manual — one time only)
+### First-time bootstrap (manual - one time only)
 
 The `ctech-gha-infra` GitHub Actions role does not exist yet on a fresh account, so the first deploy must be done locally with admin credentials:
 
@@ -112,7 +112,7 @@ The workflow (`.github/workflows/ctech-cdk.yml`) runs on every push and PR:
 - **PR**: runs `cdk diff --all` and posts the result as a PR comment
 - **Push**: deploys `Ctech-Global` (idempotent), then `Ctech-{Env}-*` for the target environment
 
-The workflow uses the `ctech-gha-infra` IAM role (created by `GlobalStack`), assumed via GitHub OIDC — no long-lived AWS credentials are stored in GitHub.
+The workflow uses the `ctech-gha-infra` IAM role (created by `GlobalStack`), assumed via GitHub OIDC - no long-lived AWS credentials are stored in GitHub.
 
 ---
 
@@ -135,7 +135,7 @@ The VPC, ALB, and ALB SG currently owned by `py-dfe-cdk`'s `PyDfe-{Env}-Network`
 **Zero-downtime path (recommended):**
 
 ```bash
-# 1. Deploy ctech-cdk — creates new resources (or import existing ones)
+# 1. Deploy ctech-cdk - creates new resources (or import existing ones)
 ENVIRONMENT=prod npx cdk deploy "Ctech-Prod-*"
 
 # 2. Import existing AWS resources into the new stacks to avoid recreation

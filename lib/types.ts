@@ -14,4 +14,7 @@ export interface SSMParams {
     vpcId: string;
     albSgId: string;
   };
+  valkey: (env: Environment) => {
+    url: string;
+  };
 }

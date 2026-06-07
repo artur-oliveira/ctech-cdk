@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import {GlobalStack} from '../lib/global-stack';
 import {NetworkStack} from '../lib/network-stack';
 import {AlbStack} from '../lib/alb-stack';
+import {ValkeyStack} from '../lib/valkey-stack';
 import {Environment} from '../lib/types';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
 
@@ -54,4 +55,15 @@ new AlbStack(app, `Ctech-${cap(ENVIRONMENT)}-ALB`, {
   securityGroup: networkStack.albSecurityGroup,
   certArn: CERT_ARN,
   description: `CTech Shared ALB - ${ENVIRONMENT}`,
+});
+
+// =====================
+// Shared Valkey cache (EC2 ASG, private, min=0 for cost-saving shutdown)
+// All services share one instance, each using a different Redis DB number.
+// =====================
+new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-Valkey`, {
+  env,
+  environment: ENVIRONMENT,
+  vpc: networkStack.vpc,
+  description: `CTech Shared Valkey Cache - ${ENVIRONMENT}`,
 });

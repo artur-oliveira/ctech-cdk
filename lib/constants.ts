@@ -18,4 +18,9 @@ export const SSM = {
     dnsName: `/ctech/${env}/alb/dns-name`,
     httpsListenerArn: `/ctech/${env}/alb/https-listener-arn`,
   }),
+  // Base URL (no DB number) written by the Valkey EC2 instance at boot.
+  // Consumers append their own DB: /0 = cache, /1 = ws pub/sub, /2+ = other services.
+  valkey: (env: string) => ({
+    url: `/ctech/${env}/valkey/url`,
+  }),
 } as SSMParams;
