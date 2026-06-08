@@ -17,9 +17,6 @@ const AWS_ACCOUNT = process.env.AWS_ACCOUNT || DEFAULT_AWS_ACCOUNT;
 const AWS_REGION = process.env.AWS_REGION || DEFAULT_AWS_REGION;
 // Wildcard cert covering *.arturocarvalho.com - used by all service ALBs.
 const CERT_ARN = process.env.AWS_CERTIFICATE_ARN || DEFAULT_CERTIFICATE_ARN;
-// GitHub OIDC provider - currently owned by py-dfe-cdk's PyDfe-Global-OIDC stack.
-// Transfer ownership here via `cdk import` when ready to consolidate.
-const OIDC_PROVIDER_ARN = `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
 const CTECH_GITHUB_REPO = process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO;
 
 const ENVIRONMENT = (process.env.ENVIRONMENT || 'dev') as Environment;
@@ -33,10 +30,9 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // =====================
 new GlobalStack(app, 'Ctech-Global', {
   env,
-  oidcProviderArn: OIDC_PROVIDER_ARN,
   certArn: CERT_ARN,
   ctechGithubRepo: CTECH_GITHUB_REPO,
-  description: 'CTech account-level shared infra (OIDC ref, cert, deploy role)',
+  description: 'CTech account-level shared infra (OIDC provider, cert, deploy role)',
 });
 
 // =====================

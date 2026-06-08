@@ -5,23 +5,27 @@ import {Construct} from 'constructs';
 import {SSM} from './constants';
 
 interface GlobalStackProps extends cdk.StackProps {
-  // ARN of the existing GitHub OIDC provider (owned by py-dfe-cdk for now).
-  // Transfer ownership to this stack via `cdk import` when ready.
-  oidcProviderArn: string;
   certArn: string;
   // e.g. "myorg/ctech-cdk"
   ctechGithubRepo: string;
 }
 
 export class GlobalStack extends cdk.Stack {
+  public readonly oidcProviderArn: string;
+
   constructor(scope: Construct, id: string, props: GlobalStackProps) {
     super(scope, id, props);
 
-    const {oidcProviderArn, certArn, ctechGithubRepo} = props;
+    const {certArn, ctechGithubRepo} = props;
 
-    const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
-      this, 'GitHubOidc', oidcProviderArn,
-    );
+    // Owns the GitHub Actions OIDC provider for the entire AWS account.
+    // All service CDKs (py-dfe-cdk, ctech-account) import this by ARN.
+    const provider = new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
+      url: 'https://token.actions.githubusercontent.com',
+      clientIds: ['sts.amazonaws.com'],
+    });
+
+    this.oidcProviderArn = provider.openIdConnectProviderArn;
 
     // ctech-cdk infra deploy role - assumed by ctech-cdk's GitHub Actions workflow.
     const trust = new iam.FederatedPrincipal(
@@ -41,7 +45,7 @@ export class GlobalStack extends cdk.Stack {
     // Publish shared values so service CDKs can reference them without hardcoding.
     new ssm.StringParameter(this, 'OidcProviderArnParam', {
       parameterName: SSM.global.oidcProviderArn,
-      stringValue: oidcProviderArn,
+      stringValue: provider.openIdConnectProviderArn,
       description: 'GitHub Actions OIDC provider ARN (shared across all services)',
     });
 
