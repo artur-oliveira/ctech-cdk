@@ -21,6 +21,11 @@ Ctech-{Env}-ALB                  (per environment)
   └── HTTP → HTTPS redirect listener
   └── HTTPS listener (default: 503 - service rules added by each service CDK)
   └── SSM: /ctech/{env}/alb/...
+
+Ctech-{Env}-S3                   (per environment)
+  └── S3: {env}-ctech-deployments      ← release artifacts, 30-day expiry
+  └── S3: {env}-ctech-application-logs ← rotated log archives, retained
+  └── SSM: /ctech/{env}/s3/...
 ```
 
 ### SSM Parameters written by this repo
@@ -34,6 +39,8 @@ Ctech-{Env}-ALB                  (per environment)
 | `/ctech/{env}/alb/arn` | ALB ARN |
 | `/ctech/{env}/alb/dns-name` | ALB DNS name |
 | `/ctech/{env}/alb/https-listener-arn` | HTTPS listener ARN - used by service CDKs to attach listener rules |
+| `/ctech/{env}/s3/deployments-bucket` | Shared deployments bucket name (`{env}-ctech-deployments`) |
+| `/ctech/{env}/s3/logs-bucket` | Shared logs bucket name (`{env}-ctech-application-logs`) |
 
 `{env}` is `dev`, `stage`, or `prod`.
 
@@ -50,9 +57,38 @@ const listenerArn = ssm.StringParameter.valueForStringParameter(this, `/ctech/${
 
 // VPC ID: must be a concrete string at synth time - read via env var populated from SSM in CI
 const vpc = ec2.Vpc.fromLookup(this, 'Vpc', { vpcId: process.env.CTECH_VPC_ID });
+
+// Shared S3 buckets: read via env vars populated from SSM in CI
+const deploymentsBucket = process.env.CTECH_DEPLOYMENTS_BUCKET ?? `${env}-ctech-deployments`;
+const logsBucket        = process.env.CTECH_LOGS_BUCKET        ?? `${env}-ctech-application-logs`;
+
+// IAM: always scope to the service's own prefix — never grant access to the whole bucket
+new iam.PolicyStatement({
+  actions: ['s3:GetObject'],
+  resources: [`arn:aws:s3:::${deploymentsBucket}/my-service/*`],
+});
 ```
 
 Each service creates its own security group with ingress from the ALB SG, then attaches an `ApplicationListenerRule` to the shared listener.
+
+### S3 path conventions
+
+| Service         | Deployments prefix | Logs prefix        |
+|-----------------|--------------------|--------------------|
+| `ctech-account` | `ctech-account/`   | `ctech-account/`   |
+| `py-dfe`        | `py-dfe/api/`      | `py-dfe/`          |
+| New service     | `{service-name}/`  | `{service-name}/`  |
+
+CI workflows read bucket names from SSM and export them before `cdk deploy`:
+
+```yaml
+- name: Read ctech shared infrastructure values
+  run: |
+    ENV="${{ steps.env.outputs.name }}"
+    echo "CTECH_VPC_ID=$(aws ssm get-parameter --name /ctech/${ENV}/network/vpc-id --query Parameter.Value --output text)" >> "$GITHUB_ENV"
+    echo "CTECH_DEPLOYMENTS_BUCKET=$(aws ssm get-parameter --name /ctech/${ENV}/s3/deployments-bucket --query Parameter.Value --output text)" >> "$GITHUB_ENV"
+    echo "CTECH_LOGS_BUCKET=$(aws ssm get-parameter --name /ctech/${ENV}/s3/logs-bucket --query Parameter.Value --output text)" >> "$GITHUB_ENV"
+```
 
 ---
 

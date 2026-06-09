@@ -17,4 +17,8 @@ export interface SSMParams {
   valkey: (env: Environment) => {
     url: string;
   };
+  s3: (env: Environment) => {
+    deploymentsBucket: string;
+    logsBucket: string;
+  };
 }

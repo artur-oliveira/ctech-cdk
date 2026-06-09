@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import {GlobalStack} from '../lib/global-stack';
 import {NetworkStack} from '../lib/network-stack';
 import {AlbStack} from '../lib/alb-stack';
+import {S3Stack} from '../lib/s3-stack';
 import {ValkeyStack} from '../lib/valkey-stack';
 import {Environment} from '../lib/types';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
@@ -51,6 +52,17 @@ new AlbStack(app, `Ctech-${cap(ENVIRONMENT)}-ALB`, {
   securityGroup: networkStack.albSecurityGroup,
   certArn: CERT_ARN,
   description: `CTech Shared ALB - ${ENVIRONMENT}`,
+});
+
+// =====================
+// Shared S3 buckets (deployments + logs, consumed by all service CDKs)
+// Service CDKs read bucket names via /ctech/{env}/s3/* SSM params and scope
+// their IAM permissions to {bucket}/{service-name}/* prefixes.
+// =====================
+new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
+  env,
+  environment: ENVIRONMENT,
+  description: `CTech Shared S3 Buckets (deployments + logs) - ${ENVIRONMENT}`,
 });
 
 // =====================

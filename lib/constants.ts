@@ -23,4 +23,8 @@ export const SSM = {
   valkey: (env: string) => ({
     url: `/ctech/${env}/valkey/url`,
   }),
+  s3: (env: string) => ({
+    deploymentsBucket: `/ctech/${env}/s3/deployments-bucket`,
+    logsBucket: `/ctech/${env}/s3/logs-bucket`,
+  }),
 } as SSMParams;
