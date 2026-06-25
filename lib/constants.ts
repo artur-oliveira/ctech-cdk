@@ -2,7 +2,7 @@ import {SSMParams} from "./types";
 
 export const DEFAULT_AWS_ACCOUNT = '868899309401';
 export const DEFAULT_AWS_REGION = 'us-east-1';
-export const DEFAULT_CERTIFICATE_ARN = 'arn:aws:acm:us-east-1:868899309401:certificate/eb8aa9cd-f7c0-4c5a-bdbe-a25c4d4b20a5';
+export const DEFAULT_CERTIFICATE_ARN = 'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
 export const DEFAULT_GITHUB_REPO = 'artur-oliveira/ctech-cdk';
 export const SSM = {
   global: {
