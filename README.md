@@ -2,6 +2,25 @@
 
 AWS CDK (TypeScript) for account-level shared infrastructure. Owns the VPC, shared ALB, and GitHub Actions OIDC deploy role used by all CTech services. Service CDKs (py-dfe-cdk, etc.) consume these resources via SSM Parameter Store - they never depend on this repo's CloudFormation stacks directly.
 
+This repo is also published to npm as **[`@aoctech/cdk`](https://www.npmjs.com/package/@aoctech/cdk)** — a small library of constructs shared across service CDKs, starting with `PrivateIpv4Ec2Service` (the private-IPv4-only, no-NAT-Gateway EC2/ASG pattern every service behind the shared ALB uses). See `lib/index.ts` for the full export list. This is a separate concern from the stacks below: the stacks deploy *this account's* shared infra; the npm package is *code* every service's own CDK imports.
+
+```bash
+npm install @aoctech/cdk
+```
+
+```typescript
+import {PrivateIpv4Ec2Service, addRealipRefreshCommands} from '@aoctech/cdk';
+```
+
+### Releasing `@aoctech/cdk`
+
+1. Land changes on `main` — CI must be green.
+2. Bump `version` in `package.json` per [semver](https://semver.org/).
+3. Create a GitHub Release (tag `vX.Y.Z`) — `.github/workflows/publish.yml` builds `dist/` and runs
+   `npm publish --provenance` via npm's OIDC trusted publishing (no `NPM_TOKEN` stored in this repo).
+4. Bump the dependency in consumers (`ctech-account/cdk`, `ctech-dfe/cdk`, `ctech-wallet/cdk`) on
+   their own schedule.
+
 ---
 
 ## Architecture

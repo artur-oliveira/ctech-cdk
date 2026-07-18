@@ -1,18 +1,34 @@
 {
-  "name": "ctech-cdk",
+  "name": "@aoctech/cdk",
   "version": "0.1.0",
+  "description": "Shared CDK constructs for the CTech platform's private-IPv4-only (no NAT Gateway) EC2 service pattern.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artur-oliveira/ctech-cdk.git"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc -p tsconfig.build.json",
     "watch": "tsc -w",
     "cdk": "cdk"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
     "aws-cdk": "^2.1126.0",
+    "aws-cdk-lib": "^2.258.0",
+    "constructs": "^10.6.0",
     "ts-node": "^10.9.2",
     "typescript": "~6.0.3"
   },
-  "dependencies": {
+  "peerDependencies": {
     "aws-cdk-lib": "^2.258.0",
     "constructs": "^10.6.0"
   }
