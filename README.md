@@ -45,7 +45,15 @@ Ctech-{Env}-S3                   (per environment)
   └── S3: {env}-ctech-deployments      ← release artifacts, 30-day expiry
   └── S3: {env}-ctech-application-logs ← rotated log archives, retained
   └── SSM: /ctech/{env}/s3/...
+
+Ctech-{Env}-Valkey               (per environment)
+  └── Valkey (AL2023 EC2 ASG, private, SG-only 6379) ← shared cache for ALL services
+  └── SSM: /ctech/{env}/valkey/url   ← base URL; consumers append DB number (/0 cache, /1 ws, /2+)
+  └── prod minCapacity=1; non-prod minCapacity=0 (scale-out on CacheUnavailable, scale-in idle)
 ```
+
+> The Valkey stack is deployed by `bin/ctech-cdk.ts:72` and is **not** yet reflected in the
+> architecture diagram that predates it — see `lib/valkey-stack.ts:23`.
 
 ### SSM Parameters written by this repo
 
@@ -211,3 +219,53 @@ The GitHub OIDC provider is currently owned by `py-dfe-cdk`'s `PyDfe-Global-OIDC
 npx cdk import Ctech-Global   # imports the provider resource
 # Then remove it from py-dfe-cdk's OidcStack and redeploy py-dfe-cdk
 ```
+
+---
+
+## Exported API — npm `@aoctech/cdk` (audited, file:line)
+
+`lib/index.ts:1-9` is the **entire** public surface of the published package:
+
+- `Environment` type — `lib/index.ts:1` (= `lib/types.ts:1`).
+- `PrivateIpv4Ec2Service` construct + `PrivateIpv4Ec2ServiceProps` — `lib/index.ts:2`
+  (`lib/private-ipv4-ec2-service.ts:73` / props `:21`). The shared no-NAT private-IPv4 EC2/ASG
+  pattern: SG, app+nginx log groups, HTTP 2XX/3XX/4XX/5XX metric filters, target group, ASG with
+  combined EC2+ELB health checks, and a listener rule on the shared HTTPS listener.
+- UserData fragments — `lib/index.ts:3-8`: `addDualStackSsmAgentCommands` `ec2-userdata-fragments.ts:11`,
+  `addCloudWatchAgentDualStackOverride` `:24`, `addSwapCommands` `:35`, `addRealipRefreshCommands` `:61`.
+
+**Not exported from the package** (but present in `lib/` as in-repo stacks, deployed by
+`bin/ctech-cdk.ts:32-77`): `GlobalStack` `lib/global-stack.ts:13`, `NetworkStack` `lib/network-stack.ts:13`,
+`AlbStack` `lib/alb-stack.ts:18`, `S3Stack` `lib/s3-stack.ts:12`, `ValkeyStack` `lib/valkey-stack.ts:23`.
+
+### SSM path constants (`lib/constants.ts:7-30`)
+
+`SSM` is defined here but **is not re-exported from `lib/index.ts`** — see divergence B15 below.
+
+| Path (canonical) | Defined at |
+|---|---|
+| `/ctech/global/oidc/provider-arn`, `/ctech/global/acm/cert-arn` | `constants.ts:9-10` |
+| `/ctech/{env}/network/vpc-id`, `/ctech/{env}/network/alb-sg-id` | `constants.ts:13-14` |
+| `/ctech/{env}/alb/arn`, `/ctech/{env}/alb/dns-name`, `/ctech/{env}/alb/https-listener-arn` | `constants.ts:17-19` |
+| `/ctech/{env}/valkey/url` | `constants.ts:23-25` |
+| `/ctech/{env}/s3/deployments-bucket`, `/ctech/{env}/s3/logs-bucket` | `constants.ts:27-29` |
+
+---
+
+## Known divergences / hypotheses (implementation is source of truth)
+
+- **B15 — `SSM` constant is not exported.** `lib/index.ts` does not export `SSM` (or `DEFAULT_*`
+  constants) from `lib/constants.ts`. All four consumer CDKs (`ctech-account/cdk`, `ctech-dfe/cdk`,
+  `ctech-wallet/cdk`, `ctech-poker/cdk`, each pinning `@aoctech/cdk@^0.1.0`) import the construct
+  helpers but **re-declare the SSM path strings locally** (e.g. `shared.albSgId`,
+  `SSM_ACCOUNT(env).baseUrl` in `ctech-wallet/cdk/lib/reconcile-stack.ts:157`). Each consumer is the
+  source of truth for its own SSM literals, so a rename in `lib/constants.ts` will *not* propagate —
+  treat any SSM path change as a breaking change across all consumers, exactly as `CLAUDE.md` warns.
+  *Fix candidate:* export `SSM` from `lib/index.ts` and migrate consumers onto it.
+- **Stale stack list in `CLAUDE.md`.** `CLAUDE.md` names `IAMStack` and `OidcStack`, which do **not**
+  exist in `lib/`. The real stacks are `GlobalStack`/`NetworkStack`/`AlbStack`/`S3Stack`/`ValkeyStack`.
+  Also `CLAUDE.md` describes `GlobalStack` as owning an "OIDC provider reference" — it actually
+  **creates** the provider (`lib/global-stack.ts:23`), not just references it. (The "owned by
+  py-dfe-cdk" note under *Known Constraints* still holds for the transfer state.)
+- **Valkey not in the architecture diagram** (now added above) — `ValkeyStack` existed in `lib/` but
+  was missing from the rendered diagram and from `CLAUDE.md`'s stack list.

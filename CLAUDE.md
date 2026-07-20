@@ -19,10 +19,11 @@ role. Service CDKs are decoupled from this repo via SSM Parameter Store.
 
 **Stacks:**
 
-- `GlobalStack` → OIDC provider reference, `ctech-gha-infra` IAM role, SSM pointers for OIDC + cert ARN
+- `GlobalStack` → **creates** the GitHub OIDC provider (`lib/global-stack.ts:23`), `ctech-gha-infra` IAM role, SSM pointers for OIDC + cert ARN
 - `NetworkStack` → Dual-stack VPC (no NAT), ALB SG; writes VPC ID + ALB SG ID to SSM
 - `AlbStack` → Shared ALB, HTTP→HTTPS redirect, HTTPS listener; writes ARN + DNS + listener ARN to SSM
 - `S3Stack` → Shared deployments + logs buckets; writes bucket names to SSM (`/ctech/{env}/s3/...`)
+- `ValkeyStack` → Shared Valkey cache (AL2023 EC2 ASG, private, SG-only 6379); writes `/ctech/{env}/valkey/url` (base URL, consumers append DB number). prod min=1, non-prod min=0 with scale-out on `CacheUnavailable` / scale-in when idle.
 
 **S3 bucket naming:**
 - `{env}-ctech-deployments` — all services upload release artifacts here under `{service-name}/`
@@ -80,6 +81,10 @@ ingress from the shared ALB SG.
   files
 - Before adding a new parameter, check if it already exists in `lib/constants.ts`
 - Renaming a parameter path is a breaking change for all consuming service CDKs
+- **B15 (divergence):** `SSM` (and `DEFAULT_*` constants) are NOT re-exported from `lib/index.ts`, so the
+  published `@aoctech/cdk` package does not expose them. Consumers (`ctech-account/cdk`, `ctech-dfe/cdk`,
+  `ctech-wallet/cdk`, `ctech-poker/cdk`) re-declare SSM path strings locally. A `lib/constants.ts` rename
+  will NOT propagate — update each consumer by hand. Fix candidate: export `SSM` from `lib/index.ts`.
 
 **Constants:**
 
@@ -94,7 +99,9 @@ ingress from the shared ALB SG.
 
 - `ctech-gha-infra` uses `AdministratorAccess` - this is intentional for CDK infra management
 - Never add service-specific permissions to `ctech-gha-infra`; each service manages its own deploy roles
-- The GitHub OIDC provider is currently owned by `py-dfe-cdk` - `GlobalStack` imports it by ARN, does not create it
+- The GitHub OIDC provider is created by `GlobalStack` (`lib/global-stack.ts:23`) in this repo. The
+  `py-dfe-cdk` `PyDfe-Global-OIDC` stack historically owned it; transfer is tracked in the README's
+  "OIDC provider ownership" section. `GlobalStack` does NOT merely import it by ARN.
 
 **S3 buckets:**
 
