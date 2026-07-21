@@ -1,6 +1,6 @@
 {
   "name": "@aoctech/cdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared CDK constructs for the CTech platform's private-IPv4-only (no NAT Gateway) EC2 service pattern.",
   "repository": {
     "type": "git",
