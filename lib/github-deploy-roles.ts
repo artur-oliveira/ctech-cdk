@@ -11,19 +11,31 @@ import {Construct} from 'constructs';
  * `repo:owner@ownerId/repo@repoId:*` for repos where GitHub has enabled
  * immutable IDs (e.g. recreated after a delete) — match both so deleting and
  * recreating a repo doesn't break OIDC trust.
+ *
+ * `allowedSubSuffixes` restricts WHICH workflow runs may assume the roles,
+ * e.g. `['ref:refs/heads/main', 'environment:prod']`. The default `['*']`
+ * matches every ref — the posture the per-repo oidc-stacks ship today.
+ * Tightening it (and scoping the infra role's AdministratorAccess) is
+ * backlog B11: pass explicit suffixes once each repo's deploy triggers are
+ * pinned to protected refs/environments.
  */
-export function githubTrustPrincipal(stack: cdk.Stack, githubRepo: string): iam.WebIdentityPrincipal {
+export function githubTrustPrincipal(
+  stack: cdk.Stack,
+  githubRepo: string,
+  allowedSubSuffixes: string[] = ['*'],
+): iam.WebIdentityPrincipal {
   const providerArn = `arn:aws:iam::${stack.account}:oidc-provider/token.actions.githubusercontent.com`;
   const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
     stack, 'GithubOidcProvider', providerArn,
   );
   const [owner, repoName] = githubRepo.split('/');
+  const subs = allowedSubSuffixes.flatMap((suffix) => [
+    `repo:${githubRepo}:${suffix}`,
+    `repo:${owner}@*/${repoName}@*:${suffix}`,
+  ]);
   return new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
     StringLike: {
-      'token.actions.githubusercontent.com:sub': [
-        `repo:${githubRepo}:*`,
-        `repo:${owner}@*/${repoName}@*:*`,
-      ],
+      'token.actions.githubusercontent.com:sub': subs,
     },
     StringEquals: {
       'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
@@ -45,6 +57,13 @@ export interface GithubActionsDeployRolesProps {
    * shared ctech-cdk buckets across environments).
    */
   deploymentsBucket?: string;
+  /**
+   * Restricts which workflow runs may assume the roles — sub-claim suffixes
+   * such as `['ref:refs/heads/main', 'environment:prod']`. Defaults to
+   * `['*']` (any ref), matching the current per-repo stacks; tightening this
+   * is backlog B11.
+   */
+  allowedSubSuffixes?: string[];
 }
 
 /**
@@ -74,7 +93,7 @@ export class GithubActionsDeployRoles extends Construct {
     const deploymentsBucket = props.deploymentsBucket ?? '*-ctech-deployments';
     this.service = service;
     this.deploymentsBucket = deploymentsBucket;
-    this.trust = githubTrustPrincipal(scope, githubRepo);
+    this.trust = githubTrustPrincipal(scope, githubRepo, props.allowedSubSuffixes);
 
     // ── Frontend deploy role ────────────────────────────────────────────────
     this.frontendRole = new iam.Role(this, 'FrontendDeployRole', {
