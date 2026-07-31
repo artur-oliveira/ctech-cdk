@@ -186,6 +186,13 @@ export class PrivateIpv4Ec2Service extends Construct {
     });
     asg.attachToApplicationTargetGroup(targetGroup);
 
+    if (props.maxCapacity > props.minCapacity) {
+      asg.scaleOnCpuUtilization("CpuTargetTracking", {
+        targetUtilizationPercent: 60,
+        cooldown: cdk.Duration.minutes(3),
+      });
+    }
+
     new elbv2.ApplicationListenerRule(this, 'ListenerRule', {
       listener: httpsListener,
       priority: props.listenerRulePriority,
