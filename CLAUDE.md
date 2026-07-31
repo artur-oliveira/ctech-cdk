@@ -143,3 +143,11 @@ No changes to `ctech-cdk` are required for a new service to attach to the shared
   `CTECH_VPC_ID` as an env var from CI, not via `valueForStringParameter`.
 - The ALB uses `DUAL_STACK_WITHOUT_PUBLIC_IPV4` - instances behind it must be reachable over IPv6.
 - `GlobalStack` is deployed on every push (it is idempotent - CloudFormation only updates changed resources).
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
