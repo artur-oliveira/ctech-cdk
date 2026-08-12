@@ -45,15 +45,6 @@ const networkStack = new NetworkStack(app, `Ctech-${cap(ENVIRONMENT)}-Network`, 
   description: `CTech Shared VPC & Security Groups - ${ENVIRONMENT}`,
 });
 
-new AlbStack(app, `Ctech-${cap(ENVIRONMENT)}-ALB`, {
-  env,
-  environment: ENVIRONMENT,
-  vpc: networkStack.vpc,
-  securityGroup: networkStack.albSecurityGroup,
-  certArn: CERT_ARN,
-  description: `CTech Shared ALB - ${ENVIRONMENT}`,
-});
-
 // =====================
 // Shared S3 buckets (deployments + logs, consumed by all service CDKs)
 // Service CDKs read bucket names via /ctech/{env}/s3/* SSM params and scope
