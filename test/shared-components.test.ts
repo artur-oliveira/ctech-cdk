@@ -5,10 +5,26 @@ import {Match, Template} from 'aws-cdk-lib/assertions';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import {
+  addCloudflareOriginCaCommands,
   buildCloudWatchAgentConfig,
   createNextjsStaticFrontend,
   HaproxyEc2Service,
 } from '../lib';
+
+test('addCloudflareOriginCaCommands downloads only the pinned official RSA root', () => {
+  const userData = ec2.UserData.forLinux();
+  addCloudflareOriginCaCommands(userData);
+
+  const rendered = userData.render();
+  assert.match(rendered, /origin_ca_rsa_root\.pem/);
+  assert.match(rendered, /cloudflare-origin-ca-rsa\.pem/);
+  assert.match(rendered, /91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/);
+  assert.match(rendered, /sha256sum --check --strict/);
+  assert.match(rendered, /openssl x509.*-checkend 86400/);
+  assert.match(rendered, /rm -f .*cloudflare-origin-ca-ecc\.pem/);
+  assert.match(rendered, /update-ca-trust extract/);
+  assert.doesNotMatch(rendered, /BEGIN CERTIFICATE|origin_ca_ecc_root\.pem/);
+});
 
 test('buildCloudWatchAgentConfig emits the bounded host metric set', () => {
   const config = JSON.parse(buildCloudWatchAgentConfig({

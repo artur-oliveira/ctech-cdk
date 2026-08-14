@@ -7,6 +7,7 @@ export {
 } from './github-deploy-roles';
 export {PrivateIpv4Ec2Service, PrivateIpv4Ec2ServiceProps} from './private-ipv4-ec2-service';
 export {
+  addCloudflareOriginCaCommands,
   addDualStackSsmAgentCommands,
   addCloudWatchAgentDualStackOverride,
   addSwapCommands,

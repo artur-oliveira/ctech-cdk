@@ -99,8 +99,8 @@ Source version 0.2.0 exports from `lib/index.ts`:
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
 - `GithubActionsDeployRoles`, its props, and `githubTrustPrincipal`;
 - the deprecated `PrivateIpv4Ec2Service`;
-- EC2 user-data fragments for dual-stack SSM, CloudWatch, swap, and real-IP
-  refresh;
+- EC2 user-data fragments for dual-stack SSM, CloudWatch, swap, real-IP
+  refresh, and Cloudflare Origin CA trust;
 - `HaproxyEc2Service`, the current private-IPv4 + IPv6 ASG, edge-SG and optional
   route-registration pattern;
 - `buildCloudWatchAgentConfig`, with a bounded four-series host/process metric
@@ -154,6 +154,22 @@ deploys use OIDC rather than long-lived AWS keys.
 Branch-to-environment behavior is defined by the workflow, not by the CDK
 entrypoint. Inspect the workflow before assuming a branch mapping.
 
+### Service URL parameters
+
+After the private zone and ctech-lbalancer aliases exist, seed the non-secret
+runtime URLs before replacing service instances:
+
+```bash
+CTECH_AWS_PROFILE=ctech ./scripts/configure-service-url-parameters.sh prod
+```
+
+The command creates transport-only internal account/JWKS URLs, each service's
+private base URL, the public audience/browser URLs, Poker's public avatar base
+URL, and Poker's private Wallet URL. It deliberately does not overwrite ctech-account's existing
+`base-url`/`app-url`: those values participate in OAuth issuer and redirect
+contracts and must remain public. Dev/stage private URLs require their VPC to
+be associated with the private hosted zone before use.
+
 ## Cost and resilience constraints
 
 - The VPC has zero NAT Gateways; workloads use IPv6 and free gateway endpoints.
@@ -181,14 +197,18 @@ entrypoint. Inspect the workflow before assuming a branch mapping.
 1. Read the shared VPC and edge-SG IDs from SSM/CI.
 2. Create an independent service IAM role, health endpoint and service-specific
    user data.
-3. Use `HaproxyEc2Service` for its ASG, logs, SG, scaling and validated route
+3. Add `addCloudflareOriginCaCommands(userData)` before starting a client that
+   calls `*.internal.aoctech.app`; it downloads only the official Cloudflare
+   Origin CA RSA root, verifies its pinned SHA-256 and X.509 validity, then runs
+   `update-ca-trust extract`.
+4. Use `HaproxyEc2Service` for its ASG, logs, SG, scaling and validated route
    manifest; allow only the service port from the shared edge SG.
-4. Create the private DNS alias only where the hosted zone is associated.
-5. Use `buildCloudWatchAgentConfig` and scope deployment/log bucket access to the
+5. Create the private DNS alias only where the hosted zone is associated.
+6. Use `buildCloudWatchAgentConfig` and scope deployment/log bucket access to the
    service prefix.
-6. Use `createNextjsStaticFrontend` for the static SPA and add only genuinely
+7. Use `createNextjsStaticFrontend` for the static SPA and add only genuinely
    service-specific behaviours through its callback.
-7. Use OIDC roles separated by API, frontend, and infrastructure duties.
-8. Run tests, TypeScript compilation, and CDK synth before deployment.
+8. Use OIDC roles separated by API, frontend, and infrastructure duties.
+9. Run tests, TypeScript compilation, and CDK synth before deployment.
 
 Do not add service-specific tables, Lambdas, or buckets to this repository.

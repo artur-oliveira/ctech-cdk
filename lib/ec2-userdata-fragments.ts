@@ -1,5 +1,10 @@
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 
+const CLOUDFLARE_ORIGIN_CA_RSA_URL =
+  'https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem';
+const CLOUDFLARE_ORIGIN_CA_RSA_SHA256 =
+  '91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae';
+
 /**
  * Byte-identical UserData fragments shared by every private-IPv4-only EC2 service
  * (no public IPv4 → SSM agent and the CloudWatch agent must be told to use the
@@ -17,6 +22,33 @@ export function addDualStackSsmAgentCommands(userData: ec2.UserData): void {
     `SSM`,
     'systemctl enable amazon-ssm-agent',
     'systemctl restart amazon-ssm-agent',
+  );
+}
+
+/**
+ * Trusts the Cloudflare Origin CA RSA root on Amazon Linux 2023.
+ *
+ * Private clients reach HAProxy directly through *.internal.aoctech.app, so
+ * they receive its Cloudflare Origin CA server certificate without Cloudflare
+ * acting as the public TLS terminator. The root is downloaded from Cloudflare's
+ * official static URL and accepted only when its pinned SHA-256 matches.
+ */
+export function addCloudflareOriginCaCommands(userData: ec2.UserData): void {
+  userData.addCommands(
+    '(',
+    '  set -euo pipefail',
+    '  command -v curl >/dev/null || dnf install -y curl-minimal',
+    '  command -v openssl >/dev/null || dnf install -y openssl',
+    '  install -d -m 0755 /etc/pki/ca-trust/source/anchors',
+    '  CF_ORIGIN_CA_TMP="$(mktemp /tmp/cloudflare-origin-ca-rsa.XXXXXX.pem)"',
+    `  trap 'rm -f "$CF_ORIGIN_CA_TMP"' EXIT`,
+    `  curl --fail --silent --show-error --location --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 "${CLOUDFLARE_ORIGIN_CA_RSA_URL}" --output "$CF_ORIGIN_CA_TMP"`,
+    `  echo "${CLOUDFLARE_ORIGIN_CA_RSA_SHA256}  $CF_ORIGIN_CA_TMP" | sha256sum --check --strict`,
+    '  openssl x509 -in "$CF_ORIGIN_CA_TMP" -noout -checkend 86400',
+    '  rm -f /etc/pki/ca-trust/source/anchors/cloudflare-origin-ca-ecc.pem',
+    '  install -m 0644 "$CF_ORIGIN_CA_TMP" /etc/pki/ca-trust/source/anchors/cloudflare-origin-ca-rsa.pem',
+    ') || { echo "Cloudflare Origin CA RSA installation failed" >&2; exit 1; }',
+    'update-ca-trust extract || exit 1',
   );
 }
 

@@ -66,6 +66,11 @@ Current public exports:
 - deprecated `PrivateIpv4Ec2Service`;
 - shared EC2 user-data fragments.
 
+`addCloudflareOriginCaCommands` downloads the official Cloudflare Origin CA
+RSA root, verifies its pinned SHA-256 and installs it in the Amazon Linux trust
+store. EC2 clients must apply it before calling `*.internal.aoctech.app`;
+never disable TLS verification.
+
 Do not add new consumers of `PrivateIpv4Ec2Service`: it creates ALB target
 groups and listener rules. Preserve it until existing compatibility needs have
 been verified and a major-version removal is planned.
