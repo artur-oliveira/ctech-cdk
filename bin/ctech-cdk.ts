@@ -3,10 +3,9 @@ import * as cdk from 'aws-cdk-lib';
 
 import {GlobalStack} from '../lib/global-stack';
 import {NetworkStack} from '../lib/network-stack';
-import {AlbStack} from '../lib/alb-stack';
 import {S3Stack} from '../lib/s3-stack';
 import {ValkeyStack} from '../lib/valkey-stack';
-import {Environment} from '../lib/types';
+import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
 
 const app = new cdk.App();
@@ -43,15 +42,6 @@ const networkStack = new NetworkStack(app, `Ctech-${cap(ENVIRONMENT)}-Network`, 
   env,
   environment: ENVIRONMENT,
   description: `CTech Shared VPC & Security Groups - ${ENVIRONMENT}`,
-});
-
-new AlbStack(app, `Ctech-${cap(ENVIRONMENT)}-ALB`, {
-  env,
-  environment: ENVIRONMENT,
-  vpc: networkStack.vpc,
-  securityGroup: networkStack.albSecurityGroup,
-  certArn: CERT_ARN,
-  description: `CTech Shared ALB - ${ENVIRONMENT}`,
 });
 
 // =====================
