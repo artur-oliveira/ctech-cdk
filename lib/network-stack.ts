@@ -78,16 +78,25 @@ export class NetworkStack extends cdk.Stack {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
     });
 
+    // Compatibility name: this SG is now the edge identity attached to
+    // ctech-lbalancer and referenced by service SGs. Keep the physical/SSM
+    // names stable until all consumers can be migrated together.
     this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
       securityGroupName: `${environment}-ctech-alb-sg`,
+      // Preserve this legacy property as well as the physical name: changing a
+      // named SG description can require replacement and collide with itself.
       description: 'Shared ALB - allows 80/443 from internet',
       allowAllOutbound: true,
     });
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP IPv4');
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS IPv4');
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(80), 'HTTP IPv6');
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(443), 'HTTPS IPv6');
+    this.albSecurityGroup.addIngressRule(
+      ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
+      ec2.Port.tcp(443),
+      'Private HTTPS from VPC',
+    );
+    // Cloudflare origin traffic is IPv6-only. nftables on ctech-lbalancer
+    // narrows this further to Cloudflare's published ranges and AOP mTLS.
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(443), 'Public HTTPS IPv6');
 
     // ── SSM exports consumed by service CDKs ─────────────────────────────────
     const net = SSM.network(environment);
@@ -101,7 +110,7 @@ export class NetworkStack extends cdk.Stack {
     new ssm.StringParameter(this, 'AlbSgIdParam', {
       parameterName: net.albSgId,
       stringValue: this.albSecurityGroup.securityGroupId,
-      description: `Shared ALB security group ID - ${environment}`,
+      description: `Shared edge security group ID (legacy ALB-compatible path) - ${environment}`,
     });
 
     new cdk.CfnOutput(this, 'VpcId', {value: this.vpc.vpcId, exportName: `${id}-vpc-id`});

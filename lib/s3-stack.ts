@@ -31,6 +31,23 @@ export class S3Stack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      lifecycleRules: [{
+        id: 'ExpireApplicationLogs',
+        // Thirteen months keeps one complete annual operational window while
+        // preventing an unbounded archive. The bucket itself remains RETAINed.
+        expiration: cdk.Duration.days(400),
+      }, {
+        id: 'ArchiveLargeApplicationLogs',
+        // Daily archives can be very small at the current traffic level. S3
+        // archival classes have minimum billable object sizes, so only archive
+        // objects larger than 128 KiB and leave smaller objects in Standard
+        // until the common expiration date.
+        objectSizeGreaterThan: 128 * 1024,
+        transitions: [{
+          storageClass: s3.StorageClass.GLACIER,
+          transitionAfter: cdk.Duration.days(90),
+        }],
+      }],
     });
 
     this.deploymentsBucketName = deploymentsBucket.bucketName;

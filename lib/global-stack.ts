@@ -52,7 +52,7 @@ export class GlobalStack extends cdk.Stack {
     new ssm.StringParameter(this, 'CertArnParam', {
       parameterName: SSM.global.certArn,
       stringValue: certArn,
-      description: 'Wildcard ACM certificate ARN for arturocarvalho.com',
+      description: 'Wildcard ACM certificate ARN for aoctech.app',
     });
 
     new cdk.CfnOutput(this, 'InfraRoleArn', {value: infraRole.roleArn});

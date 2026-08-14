@@ -12,3 +12,19 @@ export {
   addSwapCommands,
   addRealipRefreshCommands,
 } from './ec2-userdata-fragments';
+export {
+  buildCloudWatchAgentConfig,
+  CloudWatchAgentConfigProps,
+  CloudWatchAgentLogFile,
+} from './cloudwatch-agent-config';
+export {
+  createNextjsStaticFrontend,
+  NextjsStaticFrontendBehaviorContext,
+  NextjsStaticFrontendProps,
+  NextjsStaticFrontendResources,
+} from './nextjs-static-frontend';
+export {
+  HaproxyEc2Service,
+  HaproxyEc2ServiceProps,
+  HaproxyRouteRegistrationProps,
+} from './haproxy-ec2-service';

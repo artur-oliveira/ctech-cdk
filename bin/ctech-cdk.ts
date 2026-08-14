@@ -15,7 +15,7 @@ const app = new cdk.App();
 // =====================
 const AWS_ACCOUNT = process.env.AWS_ACCOUNT || DEFAULT_AWS_ACCOUNT;
 const AWS_REGION = process.env.AWS_REGION || DEFAULT_AWS_REGION;
-// Wildcard cert covering *.aoctech.app - used by all service ALBs.
+// Wildcard cert covering *.aoctech.app - shared with edge and service infrastructure.
 const CERT_ARN = process.env.AWS_CERTIFICATE_ARN || DEFAULT_CERTIFICATE_ARN;
 const CTECH_GITHUB_REPO = process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO;
 
@@ -56,7 +56,7 @@ new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
 });
 
 // =====================
-// Shared Valkey cache (EC2 ASG, private, min=0 for cost-saving shutdown)
+// Shared Valkey cache (EC2 ASG, private; prod keeps one instance, non-prod can scale to zero)
 // All services share one instance, each using a different Redis DB number.
 // =====================
 new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-Valkey`, {

@@ -1,153 +1,116 @@
-# CLAUDE.md - ctech-cdk
+# CLAUDE.md — ctech-cdk
 
-Account-level AWS CDK (TypeScript). Owns shared infrastructure consumed by all CTech services: VPC, ALB, OIDC deploy
-role. Service CDKs are decoupled from this repo via SSM Parameter Store.
+Account-level AWS CDK and the published `@aoctech/cdk` package.
 
----
+## Source of truth
 
-## Projects
+`bin/ctech-cdk.ts` currently instantiates exactly:
 
-| Repo                | Role                                                      |
-|---------------------|-----------------------------------------------------------|
-| `ctech-cdk/`        | This repo - account-level shared infra                    |
-| `py-dfe-cdk/`       | py-dfe service infra (consumes SSM params from this repo) |
-| Future service CDKs | Auth, Domino, Poker - same consumption pattern            |
+- `GlobalStack`: GitHub OIDC provider, `ctech-gha-infra`, global SSM pointers;
+- `NetworkStack`: dual-stack/no-NAT VPC, gateway endpoints, shared edge SG, and
+  the production private hosted zone;
+- `S3Stack`: shared deployments and application-log buckets;
+- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint.
 
----
+There is no deployed `AlbStack`. Public and private ingress is owned by
+`ctech-lbalancer`. `lib/alb-stack.ts`, `SSM.alb()`, and
+`PrivateIpv4Ec2Service` are legacy compatibility surfaces, not templates for
+new services.
 
-## Architecture
+The compatibility path `/ctech/{env}/network/alb-sg-id` now identifies the
+shared edge SG. Never rename it without coordinating ctech-lbalancer and all
+service CDKs.
 
-**Stacks:**
+## Mandatory workflow
 
-- `GlobalStack` → **creates** the GitHub OIDC provider (`lib/global-stack.ts:23`), `ctech-gha-infra` IAM role, SSM pointers for OIDC + cert ARN
-- `NetworkStack` → Dual-stack VPC (no NAT), ALB SG; writes VPC ID + ALB SG ID to SSM
-- `AlbStack` → Shared ALB, HTTP→HTTPS redirect, HTTPS listener; writes ARN + DNS + listener ARN to SSM
-- `S3Stack` → Shared deployments + logs buckets; writes bucket names to SSM (`/ctech/{env}/s3/...`)
-- `ValkeyStack` → Shared Valkey cache (AL2023 EC2 ASG, private, SG-only 6379); writes `/ctech/{env}/valkey/url` (base URL, consumers append DB number). prod min=1, non-prod min=0 with scale-out on `CacheUnavailable` / scale-in when idle.
+1. Read `lib/constants.ts`, `lib/index.ts`, and the relevant stack.
+2. Search consumers before changing an exported symbol or SSM path.
+3. Reuse an existing current pattern before creating a construct.
+4. Implement the smallest compatible change.
+5. Run `npm test`, `npx tsc --noEmit`, and an appropriate CDK synth.
+6. Inspect IAM and security-group changes in the synthesized template.
+7. Update documentation in the same change.
+8. Report cross-repository impact and suggest a Conventional Commit.
 
-**S3 bucket naming:**
-- `{env}-ctech-deployments` — all services upload release artifacts here under `{service-name}/`
-- `{env}-ctech-application-logs` — all services upload rotated logs here under `{service-name}/`
+## Scope
 
-Service CDKs read bucket names from `CTECH_DEPLOYMENTS_BUCKET` / `CTECH_LOGS_BUCKET` env vars (set from SSM in CI)
-and scope their IAM permissions to `{bucket}/{service-name}/*` — never to the whole bucket.
+Shared/account-level resources belong here. Service tables, service-specific
+Lambdas, API ASGs, frontend buckets, and business alarms belong in the service
+repository.
 
-**SSM parameter convention (canonical paths in `lib/constants.ts`):**
+A future reusable HAProxy service construct may own the common service-ASG
+shape, route SSM manifest, logs, health/scaling defaults, and edge-SG ingress.
+It must not own service-specific IAM, secrets, ports, or business alarms.
 
-- `/ctech/global/{resource}` - account-scoped, environment-independent
-- `/ctech/{env}/{service}/{resource}` - per-environment (`dev` / `stage` / `prod`)
+## Contracts
 
-**Stack naming convention:** `Ctech-Global` (once), `Ctech-{Env}-{Name}` (per environment).
+- SSM paths live in `lib/constants.ts`; `SSM` is exported from
+  `lib/index.ts`.
+- Renaming/removing an SSM path is a cross-repository breaking change.
+- `Vpc.fromLookup` needs a concrete VPC ID at synth time; workflows normally
+  read it from SSM into `CTECH_VPC_ID`.
+- Shared S3 access must be scoped to a service prefix.
+- The production private zone is `internal.aoctech.app` and is associated
+  with the production VPC. Other VPCs require an explicit association.
+- The shared edge SG allows production private IPv4 HTTPS from the VPC and
+  public IPv6 HTTPS; ctech-lbalancer further restricts public traffic with
+  nftables and Authenticated Origin Pull mTLS.
 
----
+## Published package
 
-## Mandatory Workflow
+Current public exports:
 
-For every change:
+- `Environment`, `SSMParams`;
+- `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
+- `GithubActionsDeployRoles`, props, and `githubTrustPrincipal`;
+- deprecated `PrivateIpv4Ec2Service`;
+- shared EC2 user-data fragments.
 
-1. Check `lib/constants.ts` for SSM path and default constant definitions before adding new ones
-2. Search for similar patterns in existing stacks - reuse before creating
-3. Plan → Implement → `npx tsc --noEmit` (must be clean)
-4. Consider cross-service impact: any SSM path rename or removal breaks all service CDKs that consume it - treat these
-   as breaking changes
-5. Suggest Conventional Commit (`feat:` / `fix:` / `refactor:` / `chore:`)
+Do not add new consumers of `PrivateIpv4Ec2Service`: it creates ALB target
+groups and listener rules. Preserve it until existing compatibility needs have
+been verified and a major-version removal is planned.
 
----
+## Security
 
-## Scope Control
+- GitHub Actions uses OIDC, not long-lived AWS access keys.
+- `ctech-gha-infra` currently has `AdministratorAccess` because it deploys
+  broad account-level CDK resources. Do not reuse it for application deploys.
+- Keep service deploy roles separate by responsibility where possible.
+- Public services have no public IPv4 and the VPC has no NAT Gateway.
+- Never commit AWS credentials, certificate material, Cloudflare tokens, or
+  customer data.
+- Review every wildcard IAM permission. Some AWS read/list/control-plane
+  actions do not support resource-level scoping; document those cases.
 
-This repo owns **only** account-level shared infrastructure. Do not add service-specific resources (DynamoDB tables,
-Lambda functions, S3 buckets for a specific service). Those belong in the service's own CDK repo.
+## Cost and resilience
 
-Service security groups (e.g., `py-dfe-api-sg`) are **not** managed here - each service CDK creates its own SG with
-ingress from the shared ALB SG.
+- No NAT Gateways.
+- S3/DynamoDB gateway endpoints are shared and free of hourly endpoint cost.
+- Production Valkey is a size-one `t4g.micro` ASG without persistence. Treat
+  it as ephemeral cache/pub-sub and account for replacement outages.
+- The deployments bucket expires objects after 30 days.
+- The application-log archive bucket is retained and has no expiration; any
+  lifecycle change requires a retention decision.
+- Do not consolidate services or downsize instances from CPU data alone.
+  Memory, connections, boot headroom, and failure blast radius are required.
 
----
+## Adding a service
 
-## Never Assume
+A service CDK should:
 
-- Never hardcode VPC IDs, SG IDs, or ARNs in service CDKs - they must read from SSM
-- Never assume SSM parameter paths exist without checking `lib/constants.ts`
-- Never assume the ALB listener priority - service CDKs own their priorities; conflicts fail at deploy time
-- Never grant a service IAM permissions to `{shared-bucket}/*` — always scope to `{bucket}/{service-name}/*`
+1. import the VPC and shared edge SG;
+2. create an independent service role, SG, ASG, logs, health endpoint, and
+   scaling policy;
+3. allow only its application port from the edge SG;
+4. publish `/ctech/{env}/lbalancer/routes/{service}`;
+5. create the appropriate private CNAME;
+6. scope S3 permissions to its prefix;
+7. use separate OIDC deployment roles and validate with synth.
 
----
+No listener priority or ALB rule is required.
 
-## Engineering Rules
+## Documentation policy
 
-**SSM parameters:**
-
-- All paths MUST be defined in `lib/constants.ts` via the `SSM` object - never declared as string literals in stack
-  files
-- Before adding a new parameter, check if it already exists in `lib/constants.ts`
-- Renaming a parameter path is a breaking change for all consuming service CDKs
-- **B15 (divergence):** `SSM` (and `DEFAULT_*` constants) are NOT re-exported from `lib/index.ts`, so the
-  published `@aoctech/cdk` package does not expose them. Consumers (`ctech-account/cdk`, `ctech-dfe/cdk`,
-  `ctech-wallet/cdk`, `ctech-poker/cdk`) re-declare SSM path strings locally. A `lib/constants.ts` rename
-  will NOT propagate — update each consumer by hand. Fix candidate: export `SSM` from `lib/index.ts`.
-
-**Constants:**
-
-- Default values (`DEFAULT_AWS_ACCOUNT`, `DEFAULT_CERTIFICATE_ARN`, etc.) live in `lib/constants.ts`
-- Env vars override defaults in `bin/ctech-cdk.ts`
-
-**Types:**
-
-- `SSMParams` interface in `lib/types.ts` enforces the shape of the `SSM` constant - keep them in sync
-
-**Security:**
-
-- `ctech-gha-infra` uses `AdministratorAccess` - this is intentional for CDK infra management
-- Never add service-specific permissions to `ctech-gha-infra`; each service manages its own deploy roles
-- The GitHub OIDC provider is created by `GlobalStack` (`lib/global-stack.ts:23`) in this repo. The
-  `py-dfe-cdk` `PyDfe-Global-OIDC` stack historically owned it; transfer is tracked in the README's
-  "OIDC provider ownership" section. `GlobalStack` does NOT merely import it by ARN.
-
-**S3 buckets:**
-
-- `{env}-ctech-deployments`: lifecycle rule deletes all objects after 30 days (artifacts are transient)
-- `{env}-ctech-application-logs`: no expiry — logs are retained indefinitely; both buckets use `RETAIN` removal policy
-- Adding a new service: upload artifacts to `{bucket}/my-service/`, grant IAM on `{bucket}/my-service/*` only
-
-**RemovalPolicy:**
-
-- VPC, ALB, and shared S3 buckets: always `RETAIN` — destroying them would break running services
-- When adding new shared resources, always consider whether destroying them would break running services
-
-**AWS costs:**
-
-- Zero NAT gateways - all instances must use IPv6 or VPC endpoints for AWS service access
-- One ALB per environment (shared across all services) - new services add listener rules, not new ALBs
-
----
-
-## Adding a New Service
-
-When a new service CDK (e.g., `auth-cdk`) needs shared infra:
-
-1. It reads VPC ID via `CTECH_VPC_ID` env var (populated from SSM in CI before `cdk deploy`)
-2. It reads ALB SG ID via `ssm.StringParameter.valueForStringParameter(this, SSM.network(env).albSgId)`
-3. It reads HTTPS listener ARN via `ssm.StringParameter.valueForStringParameter(this, SSM.alb(env).httpsListenerArn)`
-4. It reads shared bucket names via `CTECH_DEPLOYMENTS_BUCKET` / `CTECH_LOGS_BUCKET` env vars (set from `/ctech/{env}/s3/*` SSM in CI)
-5. It creates its own service SG with `addIngressRule(albSg, ec2.Port.tcp(<port>), ...)`
-6. It adds an `ApplicationListenerRule` with a unique priority
-7. It grants IAM permissions scoped to `{bucket}/my-service/*` — never the whole bucket
-
-No changes to `ctech-cdk` are required for a new service to attach to the shared ALB or use the shared S3 buckets.
-
----
-
-## Known Constraints
-
-- `Vpc.fromLookup` requires a concrete VPC ID at synthesis time (not a CloudFormation token). Service CDKs must receive
-  `CTECH_VPC_ID` as an env var from CI, not via `valueForStringParameter`.
-- The ALB uses `DUAL_STACK_WITHOUT_PUBLIC_IPV4` - instances behind it must be reachable over IPv6.
-- `GlobalStack` is deployed on every push (it is idempotent - CloudFormation only updates changed resources).
-
-## Mandatory Documentation Policy
-
-**Every code change MUST be documented.**
-
-There are NO exceptions.
-
-Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
+Every behavioral, architectural, configuration, deployment, security, or
+developer-workflow change must update the corresponding documentation in the
+same change.
