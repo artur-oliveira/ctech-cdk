@@ -6,6 +6,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
+import * as util from "node:util";
 
 // HTTP status buckets parsed out of the nginx JSON access log. Every service's
 // nginx.conf emits `"status":$status` in the same `log_format json_log`, so the
@@ -18,6 +19,9 @@ const HTTP_STATUS_METRIC_PATTERNS: ReadonlyArray<[string, string]> = [
   ['HTTP5XX', '{ $.status >= 500 }'],
 ];
 
+/**
+ * @deprecated
+ */
 export interface PrivateIpv4Ec2ServiceProps {
   vpc: ec2.IVpc;
   /** Shared ALB security group (imported from `/ctech/{env}/network/alb-sg-id`). */
@@ -211,3 +215,8 @@ export class PrivateIpv4Ec2Service extends Construct {
     this.asgName = props.asgName;
   }
 }
+
+export const DeprecatedPrivateIpv4Ec2Service = util.deprecate(
+  PrivateIpv4Ec2Service,
+  'PrivateIpv4Ec2Service is deprecated. No replacements yet.',
+);

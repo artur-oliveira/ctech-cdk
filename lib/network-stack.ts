@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import {IpProtocol} from 'aws-cdk-lib/aws-ec2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
-import {IpProtocol} from 'aws-cdk-lib/aws-ec2';
 import {Construct} from 'constructs';
 import {Environment} from './types';
 import {SSM} from './constants';
@@ -84,9 +84,9 @@ export class NetworkStack extends cdk.Stack {
       description: 'Shared ALB - allows 80/443 from internet',
       allowAllOutbound: true,
     });
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80),  'HTTP IPv4');
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP IPv4');
     this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS IPv4');
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(80),  'HTTP IPv6');
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(80), 'HTTP IPv6');
     this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(443), 'HTTPS IPv6');
 
     // ── SSM exports consumed by service CDKs ─────────────────────────────────
@@ -104,7 +104,7 @@ export class NetworkStack extends cdk.Stack {
       description: `Shared ALB security group ID - ${environment}`,
     });
 
-    new cdk.CfnOutput(this, 'VpcId',  {value: this.vpc.vpcId,                      exportName: `${id}-vpc-id`});
-    new cdk.CfnOutput(this, 'AlbSgId',{value: this.albSecurityGroup.securityGroupId, exportName: `${id}-alb-sg-id`});
+    new cdk.CfnOutput(this, 'VpcId', {value: this.vpc.vpcId, exportName: `${id}-vpc-id`});
+    new cdk.CfnOutput(this, 'AlbSgId', {value: this.albSecurityGroup.securityGroupId, exportName: `${id}-alb-sg-id`});
   }
 }
