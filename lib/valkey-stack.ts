@@ -4,6 +4,7 @@ import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Environment} from './types';
@@ -18,18 +19,20 @@ export const CACHE_UNAVAILABLE_METRIC = 'CacheUnavailable';
 interface ValkeyStackProps extends cdk.StackProps {
   environment: Environment;
   vpc: ec2.Vpc;
+  privateHostedZone?: route53.IPrivateHostedZone;
 }
 
 export class ValkeyStack extends cdk.Stack {
-  // SSM path the instance writes at boot: redis://private-ip:6379 (no DB).
+  // SSM path the instance writes at boot: redis://private-dns-or-ip:6379 (no DB).
   // Consumers append their DB number: /0 = cache, /1 = ws pub/sub, /2+ future services.
   public readonly urlSsmPath: string;
 
   constructor(scope: Construct, id: string, props: ValkeyStackProps) {
     super(scope, id, props);
 
-    const {environment, vpc} = props;
+    const {environment, vpc, privateHostedZone} = props;
     const isProd = environment === 'prod';
+    const dnsName = privateHostedZone ? `cache.${privateHostedZone.zoneName}` : undefined;
 
     this.urlSsmPath = SSM.valkey(environment).url;
 
@@ -57,6 +60,12 @@ export class ValkeyStack extends cdk.Stack {
       actions: ['ssm:PutParameter'],
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${this.urlSsmPath}`],
     }));
+    if (privateHostedZone) {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['route53:ChangeResourceRecordSets'],
+        resources: [`arn:${this.partition}:route53:::hostedzone/${privateHostedZone.hostedZoneId}`],
+      }));
+    }
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['cloudwatch:PutMetricData'],
       resources: ['*'],
@@ -160,16 +169,26 @@ export class ValkeyStack extends cdk.Stack {
       'echo "* * * * * root /opt/valkey-metrics.sh" > /etc/cron.d/valkey-metrics',
       'chmod 644 /etc/cron.d/valkey-metrics',
 
-      // ── Register private IP in SSM (no DB - consumers append /0, /1, etc.) ───────
+      // ── Register private DNS/IP in SSM (no DB - consumers append /0, /1, etc.) ────
       `cat > /opt/register-valkey.sh << 'REG'`,
       '#!/bin/bash',
       'export AWS_USE_DUALSTACK_ENDPOINT=true',
       `REGION="${this.region}"`,
       `SSM_PATH="${this.urlSsmPath}"`,
+      `DNS_NAME="${dnsName ?? ''}"`,
       'TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")',
       'LOCAL_IP=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/local-ipv4")',
-      'aws ssm put-parameter --region "$REGION" --name "$SSM_PATH" --value "redis://${LOCAL_IP}:6379" --type String --overwrite',
-      'echo "Registered Valkey base URL: redis://${LOCAL_IP}:6379"',
+      ...(privateHostedZone ? [
+        `HOSTED_ZONE_ID="${privateHostedZone.hostedZoneId}"`,
+        `cat > /tmp/valkey-dns-change.json << DNS`,
+        '{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"' + dnsName + '","Type":"A","TTL":10,"ResourceRecords":[{"Value":"' + '${LOCAL_IP}' + '"}]}}]}',
+        'DNS',
+        'aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch file:///tmp/valkey-dns-change.json',
+        'rm -f /tmp/valkey-dns-change.json',
+      ] : []),
+      'ENDPOINT_HOST="${DNS_NAME:-$LOCAL_IP}"',
+      'aws ssm put-parameter --region "$REGION" --name "$SSM_PATH" --value "redis://${ENDPOINT_HOST}:6379" --type String --overwrite',
+      'echo "Registered Valkey base URL: redis://${ENDPOINT_HOST}:6379"',
       'REG',
       'chmod +x /opt/register-valkey.sh',
       'bash /opt/register-valkey.sh',
@@ -282,5 +301,8 @@ export class ValkeyStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ValkeyUrlSsmPath', {value: this.urlSsmPath, exportName: `${id}-url-ssm-path`});
     new cdk.CfnOutput(this, 'ValkeyAsgName', {value: asg.autoScalingGroupName, exportName: `${id}-asg-name`});
     new cdk.CfnOutput(this, 'ValkeySgId', {value: sg.securityGroupId, exportName: `${id}-sg-id`});
+    if (dnsName) {
+      new cdk.CfnOutput(this, 'ValkeyDnsName', {value: dnsName, exportName: `${id}-dns-name`});
+    }
   }
 }

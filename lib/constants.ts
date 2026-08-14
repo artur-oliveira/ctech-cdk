@@ -8,6 +8,8 @@ export const SSM = {
   global: {
     oidcProviderArn: '/ctech/global/oidc/provider-arn',
     certArn: '/ctech/global/acm/cert-arn',
+    privateHostedZoneId: '/ctech/global/dns/private-hosted-zone-id',
+    privateHostedZoneName: '/ctech/global/dns/private-hosted-zone-name',
   },
   network: (env: string) => ({
     vpcId: `/ctech/${env}/network/vpc-id`,

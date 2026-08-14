@@ -4,6 +4,8 @@ export interface SSMParams {
   global: {
     oidcProviderArn: string;
     certArn: string;
+    privateHostedZoneId: string;
+    privateHostedZoneName: string;
   };
   alb: (env: Environment) => {
     arn: string;

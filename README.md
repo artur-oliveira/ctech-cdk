@@ -33,6 +33,7 @@ Ctech-Global                     (one per account, deployed once)
 Ctech-{Env}-Network              (per environment: dev / stage / prod)
   └── VPC (dual-stack IPv4+IPv6, 0 NAT gateways)
   └── Security Group: ALB SG
+  └── Route 53 private zone: internal.aoctech.app (owned by prod)
   └── SSM: /ctech/{env}/network/...
 
 Ctech-{Env}-ALB                  (per environment)
@@ -45,6 +46,11 @@ Ctech-{Env}-S3                   (per environment)
   └── S3: {env}-ctech-deployments      ← release artifacts, 30-day expiry
   └── S3: {env}-ctech-application-logs ← rotated log archives, retained
   └── SSM: /ctech/{env}/s3/...
+
+Ctech-{Env}-Valkey               (per environment)
+  └── EC2/ASG Valkey cache
+  └── DNS in prod: cache.internal.aoctech.app
+  └── SSM: /ctech/{env}/valkey/url
 ```
 
 ### SSM Parameters written by this repo
@@ -52,7 +58,9 @@ Ctech-{Env}-S3                   (per environment)
 | Path | Description |
 |---|---|
 | `/ctech/global/oidc/provider-arn` | GitHub OIDC provider ARN |
-| `/ctech/global/acm/cert-arn` | Wildcard ACM certificate ARN (`*.arturocarvalho.com`) |
+| `/ctech/global/acm/cert-arn` | Wildcard ACM certificate ARN (`*.aoctech.app`) |
+| `/ctech/global/dns/private-hosted-zone-id` | Shared `internal.aoctech.app` private hosted zone ID |
+| `/ctech/global/dns/private-hosted-zone-name` | Shared private hosted zone name |
 | `/ctech/{env}/network/vpc-id` | Shared VPC ID |
 | `/ctech/{env}/network/alb-sg-id` | ALB security group ID |
 | `/ctech/{env}/alb/arn` | ALB ARN |
@@ -60,6 +68,7 @@ Ctech-{Env}-S3                   (per environment)
 | `/ctech/{env}/alb/https-listener-arn` | HTTPS listener ARN - used by service CDKs to attach listener rules |
 | `/ctech/{env}/s3/deployments-bucket` | Shared deployments bucket name (`{env}-ctech-deployments`) |
 | `/ctech/{env}/s3/logs-bucket` | Shared logs bucket name (`{env}-ctech-application-logs`) |
+| `/ctech/{env}/valkey/url` | Valkey base URL; uses `cache.internal.aoctech.app` in production |
 
 `{env}` is `dev`, `stage`, or `prod`.
 

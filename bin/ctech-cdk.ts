@@ -16,7 +16,7 @@ const app = new cdk.App();
 // =====================
 const AWS_ACCOUNT = process.env.AWS_ACCOUNT || DEFAULT_AWS_ACCOUNT;
 const AWS_REGION = process.env.AWS_REGION || DEFAULT_AWS_REGION;
-// Wildcard cert covering *.arturocarvalho.com - used by all service ALBs.
+// Wildcard cert covering *.aoctech.app - used by all service ALBs.
 const CERT_ARN = process.env.AWS_CERTIFICATE_ARN || DEFAULT_CERTIFICATE_ARN;
 const CTECH_GITHUB_REPO = process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO;
 
@@ -73,5 +73,6 @@ new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-Valkey`, {
   env,
   environment: ENVIRONMENT,
   vpc: networkStack.vpc,
+  privateHostedZone: networkStack.privateHostedZone,
   description: `CTech Shared Valkey Cache - ${ENVIRONMENT}`,
 });

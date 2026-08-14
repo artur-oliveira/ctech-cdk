@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {IpProtocol} from 'aws-cdk-lib/aws-ec2';
 import {Construct} from 'constructs';
@@ -13,6 +14,7 @@ interface NetworkStackProps extends cdk.StackProps {
 export class NetworkStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly albSecurityGroup: ec2.SecurityGroup;
+  public readonly privateHostedZone?: route53.PrivateHostedZone;
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
@@ -38,6 +40,35 @@ export class NetworkStack extends cdk.Stack {
     for (const subnet of this.vpc.publicSubnets) {
       const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
       cfnSubnet.assignIpv6AddressOnCreation = true;
+    }
+
+    // One shared private namespace. It is owned by prod so future environments
+    // can be associated with this same zone instead of creating another $0.50/mo
+    // hosted zone. The zone is retained if the production network stack is removed.
+    if (environment === 'prod') {
+      this.privateHostedZone = new route53.PrivateHostedZone(this, 'PrivateHostedZone', {
+        zoneName: 'internal.aoctech.app',
+        vpc: this.vpc,
+        comment: 'Private service discovery for CTech workloads',
+      });
+      this.privateHostedZone.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+
+      new ssm.StringParameter(this, 'PrivateHostedZoneIdParam', {
+        parameterName: SSM.global.privateHostedZoneId,
+        stringValue: this.privateHostedZone.hostedZoneId,
+        description: 'Shared Route 53 private hosted zone ID',
+      });
+
+      new ssm.StringParameter(this, 'PrivateHostedZoneNameParam', {
+        parameterName: SSM.global.privateHostedZoneName,
+        stringValue: this.privateHostedZone.zoneName,
+        description: 'Shared Route 53 private hosted zone name',
+      });
+
+      new cdk.CfnOutput(this, 'PrivateHostedZoneId', {
+        value: this.privateHostedZone.hostedZoneId,
+        exportName: 'Ctech-private-hosted-zone-id',
+      });
     }
 
     this.vpc.addGatewayEndpoint('S3Endpoint', {
