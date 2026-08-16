@@ -38,6 +38,7 @@ account_internal="https://accounts${internal_suffix}.internal.aoctech.app"
 dfe_internal="https://dfe${internal_suffix}.internal.aoctech.app"
 wallet_internal="https://wallet${internal_suffix}.internal.aoctech.app"
 poker_internal="https://poker${internal_suffix}.internal.aoctech.app"
+billing_internal="https://billing${internal_suffix}.internal.aoctech.app"
 
 # Keep ctech-account's existing base-url/app-url values untouched: they define
 # the public OAuth issuer and browser redirect contract. These two parameters
@@ -53,6 +54,12 @@ put_url "/ctech-dfe/$environment/app-url" \
   "Public DFE audience and browser origin"
 put_url "/ctech-dfe/$environment/internal-base-url" "$dfe_internal" \
   "Private DFE API endpoint through CTech HAProxy"
+
+# Billing's own root (terraform/billing) owns its DNS record and publishes its
+# secrets, but not this: the URL is what *other* services need in order to reach
+# it, and every one of those lives here rather than in the callee's state.
+put_url "/ctech-billing/$environment/internal-base-url" "$billing_internal" \
+  "Private billing API endpoint through CTech HAProxy"
 
 put_url "/ctech-wallet/$environment/app-url" \
   "https://wallet${public_suffix}.aoctech.app" \
