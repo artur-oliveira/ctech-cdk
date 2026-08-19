@@ -82,6 +82,8 @@ configuration, and updates the Cloudflare origin AAAA record.
 | `/ctech/{env}/s3/deployments-bucket` | Shared deployment-artifact bucket |
 | `/ctech/{env}/s3/logs-bucket` | Shared application-log archive bucket |
 | `/ctech/{env}/valkey/url` | Valkey base URL; consumers append their DB number |
+| `/ctech/{env}/ec2-scripts/bucket` | Bucket holding the shared EC2 bootstrap scripts |
+| `/ctech/{env}/ec2-scripts/version` | Content hash of `assets/ec2`, and the S3 key prefix the scripts live under |
 
 `SSM.alb(env)` remains exported for compatibility with legacy ALB code, but
 the current entrypoint does not deploy `AlbStack` and therefore does not write
@@ -93,14 +95,18 @@ the current entrypoint does not deploy `AlbStack` and therefore does not write
 npm install @aoctech/cdk
 ```
 
-Source version 0.2.0 exports from `lib/index.ts`:
+Source version 0.3.0 exports from `lib/index.ts`:
 
 - `Environment`, `SSMParams`;
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
 - `GithubActionsDeployRoles`, its props, and `githubTrustPrincipal`;
 - the deprecated `PrivateIpv4Ec2Service`;
 - EC2 user-data fragments for dual-stack SSM, CloudWatch, swap, real-IP
-  refresh, and Cloudflare Origin CA trust;
+  refresh, and Cloudflare Origin CA trust (superseded by `assets/ec2/*.sh`);
+- `Ec2ScriptRunner`, which emits user data that downloads and runs the shared
+  bootstrap scripts;
+- `AsgScheduleProps`, `DEFAULT_ASG_SCHEDULE` and `addAsgSchedule` for the
+  nightly ASG stop/start pair;
 - `HaproxyEc2Service`, the current private-IPv4 + IPv6 ASG, edge-SG and optional
   route-registration pattern;
 - `buildCloudWatchAgentConfig`, with a bounded four-series host/process metric
@@ -121,7 +127,7 @@ DFE's docs CSP and Poker's avatar behaviour use the documented escape hatches.
 
 1. Land a green change on `main`.
 2. Bump `package.json` using semver.
-3. Create release/tag `vX.Y.Z` (the next release is `v0.2.0`).
+3. Create release/tag `vX.Y.Z` (the next release is `v0.3.0`).
 4. `.github/workflows/publish.yml` publishes with npm trusted publishing and
    provenance; no `NPM_TOKEN` is stored.
 5. Upgrade consumers deliberately and run their synths.
@@ -210,5 +216,34 @@ be associated with the private hosted zone before use.
    service-specific behaviours through its callback.
 8. Use OIDC roles separated by API, frontend, and infrastructure duties.
 9. Run tests, TypeScript compilation, and CDK synth before deployment.
+
+### Bootstrapping an instance
+
+User data is a list of script invocations, not a list of files. Compose it with
+`Ec2ScriptRunner`:
+
+```ts
+const scripts = new Ec2ScriptRunner(this, 'Scripts', {environment});
+scripts.install(userData);
+scripts.run(userData, 'setup-base.sh', 'ctech-example', 'nginx');
+scripts.run(userData, 'setup-swap.sh', '256');
+scripts.run(userData, 'setup-dualstack.sh');
+scripts.run(userData, 'setup-cloudflare-ca.sh');
+scripts.run(userData, 'setup-realip.sh', vpc.vpcCidrBlock);
+scripts.run(userData, 'setup-nginx.sh', '8080', '8000', '/v1.0/health-check');
+```
+
+The instance role needs `s3:GetObject` on the scripts bucket:
+`scripts.grantRead(role)`.
+
+Only values CloudFormation has to resolve stay inline: bucket names, log group
+names, the CloudWatch agent JSON, and `/etc/app-static.env`. Per-service nginx
+locations go in `/etc/nginx/conf.d/location-*.conf`; per-service derived
+environment variables go in `/opt/app/service-env.sh`.
+
+The scripts themselves live in `assets/ec2/` in this repository. Editing one
+changes the asset hash, which changes every consuming service's user data on its
+next deploy — that is what triggers the instance refresh, and it means a script
+change is a cross-repository change.
 
 Do not add service-specific tables, Lambdas, or buckets to this repository.

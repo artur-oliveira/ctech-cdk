@@ -10,7 +10,9 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
 - `NetworkStack`: dual-stack/no-NAT VPC, gateway endpoints, shared edge SG, and
   the production private hosted zone;
 - `S3Stack`: shared deployments and application-log buckets;
-- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint.
+- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint;
+- `Ec2ScriptsStack`: shared EC2 bootstrap scripts published under a content-hash
+  prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers.
 
 There is no deployed `AlbStack`. Public and private ingress is owned by
 `ctech-lbalancer`. `lib/alb-stack.ts`, `SSM.alb()`, and
@@ -64,12 +66,19 @@ Current public exports:
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
 - `GithubActionsDeployRoles`, props, and `githubTrustPrincipal`;
 - deprecated `PrivateIpv4Ec2Service`;
-- shared EC2 user-data fragments.
+- shared EC2 user-data fragments;
+- `Ec2ScriptRunner` and props;
+- `AsgScheduleProps`, `DEFAULT_ASG_SCHEDULE`, `addAsgSchedule`.
 
 `addCloudflareOriginCaCommands` downloads the official Cloudflare Origin CA
 RSA root, verifies its pinned SHA-256 and installs it in the Amazon Linux trust
 store. EC2 clients must apply it before calling `*.internal.aoctech.app`;
 never disable TLS verification.
+
+Shared EC2 user-data fragments (`addSwapCommands` and the rest) are superseded by
+`assets/ec2/*.sh` plus `Ec2ScriptRunner`. They remain exported until every
+service repository has migrated, then are removed in 1.0.0 alongside
+`PrivateIpv4Ec2Service`. Do not add new consumers.
 
 Do not add new consumers of `PrivateIpv4Ec2Service`: it creates ALB target
 groups and listener rules. Preserve it until existing compatibility needs have
