@@ -1,3 +1,4 @@
+import {spawnSync} from 'node:child_process';
 import * as path from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
@@ -66,9 +67,14 @@ export class DragonflyStack extends cdk.Stack {
     const asgName = `${environment}-ctech-dragonfly`;
     this.urlSsmPath = SSM.valkey(environment).url;
 
-    // The bundling container only downloads and checksums the published aarch64
+    // The bundling step only downloads and checksums the published aarch64
     // release, so it needs no toolchain and no platform emulation. See
     // assets/dragonfly/install.sh for why the version lives in the asset.
+    //
+    // `local` runs that same script directly on the synth host and is what the
+    // Docker-less CI runner uses; the container is only the fallback for a host
+    // without curl or tar. Returning false from tryBundle is what triggers it.
+    const installScript = path.join(__dirname, '../assets/dragonfly/install.sh');
     const dragonflyAsset = new s3assets.Asset(this, 'DragonflyBinaryAsset', {
       path: path.join(__dirname, '../assets/dragonfly'),
       bundling: {
@@ -76,6 +82,15 @@ export class DragonflyStack extends cdk.Stack {
         image: cdk.DockerImage.fromRegistry('public.ecr.aws/amazonlinux/amazonlinux:2023'),
         command: ['bash', '/asset-input/install.sh'],
         outputType: cdk.BundlingOutput.NOT_ARCHIVED,
+        local: {
+          tryBundle(outputDir: string): boolean {
+            const result = spawnSync('bash', [installScript], {
+              stdio: 'inherit',
+              env: {...process.env, ASSET_OUTPUT_DIR: outputDir},
+            });
+            return result.status === 0;
+          },
+        },
       },
     });
 

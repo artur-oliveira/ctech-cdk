@@ -204,6 +204,11 @@ from S3. Version and digest live in that script rather than in TypeScript
 because the asset hash is the hash of the directory: editing the script is what
 invalidates the S3 object and versions the launch template.
 
+`install.sh` only downloads and verifies, so bundling runs directly on the synth
+host through CDK's `local` hook - the CI runner (`ubuntu-slim`) has no Docker
+daemon. The `amazonlinux:2023` container stays as the fallback for a host without
+`curl` or `tar`. When run locally the script honours `ASSET_OUTPUT_DIR`.
+
 Flag choices are driven by the 512 MiB t4g.nano:
 
 | Flag | Value | Why |
