@@ -55,3 +55,12 @@ test('setup-cloudflare-ca.sh pins the official RSA root by SHA-256', () => {
   assert.match(body, /update-ca-trust extract/);
   assert.doesNotMatch(body, /BEGIN CERTIFICATE|origin_ca_ecc_root\.pem/);
 });
+
+test('setup-realip.sh refuses a partial CloudFront prefix list and requires a CIDR', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-realip.sh'), 'utf8');
+  assert.match(body, /VPC_CIDR="\$\{1:\?/, 'VPC CIDR must be a required argument');
+  assert.match(body, /com\.amazonaws\.global\.cloudfront\.origin-facing/);
+  assert.match(body, /-lt 10/, 'must bail when fewer than 10 CloudFront prefixes come back');
+  assert.match(body, /real_ip_recursive on/);
+  assert.match(body, /systemctl enable --now update-realip\.timer/);
+});
