@@ -2,13 +2,19 @@
 # Installs /opt/app/deploy.sh, which SSM RunCommand invokes from GitHub Actions
 # with the release key as its only argument.
 #
-# Usage: setup-deploy.sh <deployments-bucket> <binary-name> <health-url>
+# Usage: setup-deploy.sh <deployments-bucket> <binary-name> <health-url> [extra binaries...]
 #   setup-deploy.sh prod-ctech-deployments app http://127.0.0.1:8080/v1.0/health-check
+#   setup-deploy.sh prod-ctech-deployments app http://…/health sweep reconcile
+#
+# The extra binaries are the one-shot job binaries a release ships alongside the
+# service: they need the exec bit too, and a zip does not carry it reliably.
 set -euo pipefail
 
 BUCKET="${1:?setup-deploy.sh: deployments bucket required}"
 BINARY="${2:?setup-deploy.sh: binary name required}"
 HEALTH_URL="${3:?setup-deploy.sh: health check URL required}"
+shift 3
+BINARIES="$BINARY $*"
 
 mkdir -p /opt/app/releases
 
@@ -26,7 +32,7 @@ mkdir -p "$RELEASE_DIR"
 echo "Downloading release: $S3_KEY"
 aws s3 cp "s3://__BUCKET__/$S3_KEY" /tmp/release.zip
 unzip -o /tmp/release.zip -d "$RELEASE_DIR"
-chmod +x "$RELEASE_DIR/__BINARY__"
+for b in __BINARIES__; do chmod +x "$RELEASE_DIR/$b"; done
 chown -R webapp:webapp "$RELEASE_DIR"
 ln -sfT "$RELEASE_DIR" /opt/app/current
 systemctl restart app 2>/dev/null || systemctl start app
@@ -56,7 +62,7 @@ DEPLOY
 
 sed -i \
   -e "s|__BUCKET__|${BUCKET}|g" \
-  -e "s|__BINARY__|${BINARY}|g" \
+  -e "s|__BINARIES__|${BINARIES}|g" \
   -e "s|__HEALTH_URL__|${HEALTH_URL}|g" \
   /opt/app/deploy.sh
 
