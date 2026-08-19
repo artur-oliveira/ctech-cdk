@@ -8,6 +8,7 @@ import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
 import {DragonflyStack} from "../lib/dragonfly-stack";
+import {ValkeyStack} from "../lib/valkey-stack";
 
 const app = new cdk.App();
 
@@ -77,12 +78,24 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
 //   ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Dragonfly
 // The cache is empty on both sides of that gap by design.
 // =====================
-new DragonflyStack(app, `Ctech-${cap(ENVIRONMENT)}-Dragonfly`, {
+// new DragonflyStack(app, `Ctech-${cap(ENVIRONMENT)}-Dragonfly`, {
+//   env,
+//   environment: ENVIRONMENT,
+//   vpc: networkStack.vpc,
+//   privateHostedZone: networkStack.privateHostedZone,
+//   // Nightly stop/start with the shared defaults (22:00–10:00 BRT down).
+//   schedule: {},
+//   description: `CTech Shared Dragonfly Cache - ${ENVIRONMENT}`,
+// });
+
+// Rollback to valkey, there's no performance gain on t4g.nano instances
+new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
   env,
   environment: ENVIRONMENT,
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
-  // Nightly stop/start with the shared defaults (22:00–10:00 BRT down).
-  schedule: {},
-  description: `CTech Shared Dragonfly Cache - ${ENVIRONMENT}`,
-});
+  schedule: {
+    enableCron: '30 9 * * *'
+  },
+  description: `CTech Shared ValKey Cache - ${ENVIRONMENT}`,
+})

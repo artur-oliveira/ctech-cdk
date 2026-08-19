@@ -115,11 +115,11 @@ export class ValkeyStack extends cdk.Stack {
       'port 6379',
       'daemonize no',
       'loglevel notice',
-      'databases 128',
+      'databases 16',
       'save ""',
       'appendonly no',
-      'maxmemory 512mb',
-      'maxmemory-policy allkeys-lru',
+      'maxmemory 128mb',
+      'maxmemory-policy allkeys-lfu',
       'tcp-keepalive 60',
       'timeout 0',
       'VALKEYCONF',
@@ -152,20 +152,49 @@ export class ValkeyStack extends cdk.Stack {
       '}',
       'CWA',
       '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s',
-
-      // ── Custom metrics: connected_clients + used_memory (per minute via cron) ────
+      
+      // ── Custom Valkey metrics (per minute via cron) ─────────────────────────
       `cat > /opt/valkey-metrics.sh << 'METRICS'`,
       '#!/bin/bash',
+      'set -uo pipefail',
       'export AWS_USE_DUALSTACK_ENDPOINT=true',
       `REGION="${this.region}"`,
       `NS="${VALKEY_METRIC_NAMESPACE(environment)}"`,
-      'TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" || echo "")',
-      'INSTANCE_ID=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/instance-id" || echo "unknown")',
-      'CLIENTS=$(valkey-cli info clients 2>/dev/null | grep ^connected_clients | cut -d: -f2 | tr -d "\\r" || echo "0")',
-      'MEM=$(valkey-cli info memory 2>/dev/null | grep ^used_memory: | cut -d: -f2 | tr -d "\\r" || echo "0")',
+
+      'INFO=$(valkey-cli --raw INFO 2>/dev/null || true)',
+      '[ -z "$INFO" ] && exit 0',
+      
+      'metric() {',
+      '  echo "$INFO" | awk -F: -v key="$1" \'$1 == key { gsub("\\r", "", $2); print $2; exit }\'',
+      '}',
+      
+      'USED_MEMORY=$(metric used_memory)',
+      'MAXMEMORY=$(metric maxmemory)',
+      'CONNECTED_CLIENTS=$(metric connected_clients)',
+      'OPS=$(metric instantaneous_ops_per_sec)',
+      'HITS=$(metric keyspace_hits)',
+      'MISSES=$(metric keyspace_misses)',
+      'EVICTED_KEYS=$(metric evicted_keys)',
+      'REJECTED_CONNECTIONS=$(metric rejected_connections)',
+      
+      'MEMORY_USAGE_PERCENT=0',
+      'if [ "${MAXMEMORY:-0}" -gt 0 ]; then',
+      '  MEMORY_USAGE_PERCENT=$(awk "BEGIN { printf \\"%.2f\\", (${USED_MEMORY:-0} / ${MAXMEMORY:-1}) * 100 }")',
+      'fi',
+      
       'aws cloudwatch put-metric-data --region "$REGION" \\',
       '  --namespace "$NS" \\',
-      '  --metric-data "[{\\\"MetricName\\\":\\\"ConnectedClients\\\",\\\"Dimensions\\\":[{\\\"Name\\\":\\\"InstanceId\\\",\\\"Value\\\":\\\"$INSTANCE_ID\\\"}],\\\"Value\\\":${CLIENTS:-0},\\\"Unit\\\":\\\"Count\\\"},{\\\"MetricName\\\":\\\"UsedMemoryBytes\\\",\\\"Dimensions\\\":[{\\\"Name\\\":\\\"InstanceId\\\",\\\"Value\\\":\\\"$INSTANCE_ID\\\"}],\\\"Value\\\":${MEM:-0},\\\"Unit\\\":\\\"Bytes\\\"}]"',
+      '  --metric-data "[' +
+      '{\\"MetricName\\":\\"UsedMemoryBytes\\",\\"Value\\":${USED_MEMORY:-0},\\"Unit\\":\\"Bytes\\"},' +
+      '{\\"MetricName\\":\\"MemoryUsagePercent\\",\\"Value\\":${MEMORY_USAGE_PERCENT:-0},\\"Unit\\":\\"Percent\\"},' +
+      '{\\"MetricName\\":\\"ConnectedClients\\",\\"Value\\":${CONNECTED_CLIENTS:-0},\\"Unit\\":\\"Count\\"},' +
+      '{\\"MetricName\\":\\"OperationsPerSecond\\",\\"Value\\":${OPS:-0},\\"Unit\\":\\"Count/Second\\"},' +
+      '{\\"MetricName\\":\\"KeyspaceHits\\",\\"Value\\":${HITS:-0},\\"Unit\\":\\"Count\\"},' +
+      '{\\"MetricName\\":\\"KeyspaceMisses\\",\\"Value\\":${MISSES:-0},\\"Unit\\":\\"Count\\"},' +
+      '{\\"MetricName\\":\\"EvictedKeys\\",\\"Value\\":${EVICTED_KEYS:-0},\\"Unit\\":\\"Count\\"},' +
+      '{\\"MetricName\\":\\"RejectedConnections\\",\\"Value\\":${REJECTED_CONNECTIONS:-0},\\"Unit\\":\\"Count\\"}' +
+      ']"',
+      
       'METRICS',
       'chmod +x /opt/valkey-metrics.sh',
       'echo "* * * * * root /opt/valkey-metrics.sh" > /etc/cron.d/valkey-metrics',
