@@ -38,6 +38,9 @@ events {
 
 http {
     include /etc/nginx/mime.types;
+    # Kept where every service's own nginx.conf had it, so the shared config is a
+    # drop-in replacement. The directory is empty on the AL2023 minimal AMI.
+    include /usr/share/nginx/modules/*.conf;
     default_type application/octet-stream;
 
     # Written by /opt/app/update-realip.sh: set_real_ip_from for HAProxy and for
