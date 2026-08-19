@@ -29,4 +29,12 @@ export const SSM = {
     deploymentsBucket: `/ctech/${env}/s3/deployments-bucket`,
     logsBucket: `/ctech/${env}/s3/logs-bucket`,
   }),
+  // Written by Ec2ScriptsStack. `version` is the content hash of assets/ec2 and
+  // is also the S3 key prefix the scripts live under. Consumers embed both in
+  // user data at deploy time, which is what versions the launch template when a
+  // script changes.
+  ec2Scripts: (env: string) => ({
+    bucket: `/ctech/${env}/ec2-scripts/bucket`,
+    version: `/ctech/${env}/ec2-scripts/version`,
+  }),
 } as SSMParams;

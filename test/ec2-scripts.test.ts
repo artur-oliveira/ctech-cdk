@@ -3,6 +3,10 @@ import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync} from 'node:fs';
 import * as path from 'node:path';
 import {test} from 'node:test';
+import * as cdk from 'aws-cdk-lib';
+import {Match, Template} from 'aws-cdk-lib/assertions';
+import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
+import {SSM} from '../lib';
 
 const ASSETS_DIR = path.join(__dirname, '..', 'assets', 'ec2');
 
@@ -125,4 +129,50 @@ test('bootstrap-deploy.sh tolerates a missing first artifact', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'bootstrap-deploy.sh'), 'utf8');
   assert.match(body, /s3api head-object/);
   assert.match(body, /waiting for first deploy/);
+});
+
+test('SSM.ec2Scripts exposes the bucket and version paths', () => {
+  assert.equal(SSM.ec2Scripts('prod').bucket, '/ctech/prod/ec2-scripts/bucket');
+  assert.equal(SSM.ec2Scripts('prod').version, '/ctech/prod/ec2-scripts/version');
+});
+
+test('Ec2ScriptsStack publishes the scripts under a content-hash prefix', () => {
+  const app = new cdk.App();
+  const stack = new Ec2ScriptsStack(app, 'ScriptsFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+    environment: 'prod',
+  });
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties('AWS::S3::Bucket', {
+    BucketName: 'prod-ctech-ec2-scripts',
+    VersioningConfiguration: {Status: 'Enabled'},
+    PublicAccessBlockConfiguration: {
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    },
+  });
+
+  // No expiration: an unchanged environment must not have its live prefix deleted.
+  template.hasResource('AWS::S3::Bucket', {
+    Properties: Match.objectLike({LifecycleConfiguration: Match.absent()}),
+  });
+
+  template.hasResourceProperties('Custom::CDKBucketDeployment', {
+    DestinationBucketKeyPrefix: stack.version,
+    Prune: false,
+  });
+
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ec2-scripts/version',
+    Value: stack.version,
+  });
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ec2-scripts/bucket',
+    Value: 'prod-ctech-ec2-scripts',
+  });
+
+  assert.match(stack.version, /^[0-9a-f]{64}$/, 'version must be the asset content hash');
 });

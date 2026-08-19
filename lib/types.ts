@@ -23,4 +23,8 @@ export interface SSMParams {
     deploymentsBucket: string;
     logsBucket: string;
   };
+  ec2Scripts: (env: Environment) => {
+    bucket: string;
+    version: string;
+  };
 }

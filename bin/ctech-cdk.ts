@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import {GlobalStack} from '../lib/global-stack';
 import {NetworkStack} from '../lib/network-stack';
 import {S3Stack} from '../lib/s3-stack';
+import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {ValkeyStack} from '../lib/valkey-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
@@ -53,6 +54,16 @@ new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
   env,
   environment: ENVIRONMENT,
   description: `CTech Shared S3 Buckets (deployments + logs) - ${ENVIRONMENT}`,
+});
+
+// =====================
+// Shared EC2 bootstrap scripts (consumed by every service CDK and by the
+// Terraform services through /ctech/{env}/ec2-scripts/* SSM parameters).
+// =====================
+new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
+  env,
+  environment: ENVIRONMENT,
+  description: `CTech Shared EC2 Bootstrap Scripts - ${ENVIRONMENT}`,
 });
 
 // =====================
