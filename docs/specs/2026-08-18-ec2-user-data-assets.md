@@ -128,9 +128,11 @@ A new `Ec2ScriptsStack` in `ctech-cdk`, deployed per environment:
   - `/ctech/{env}/ec2-scripts/bucket` — the bucket name;
   - `/ctech/{env}/ec2-scripts/version` — the asset hash.
 
-`prune: false` means old prefixes accumulate. A lifecycle rule expiring objects
-after 90 days bounds that; an ASG that has not been refreshed in 90 days is a
-problem in its own right.
+`prune: false` means old prefixes accumulate, and the bucket deliberately has no
+expiration rule. Expiring objects by age would delete the *live* prefix of any
+environment whose scripts had not changed within the window, breaking every boot
+after that. The scripts total a few kilobytes, so accumulation is not a cost
+worth that failure mode.
 
 ### 3. Consumption from CDK
 
