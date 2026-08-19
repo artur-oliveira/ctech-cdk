@@ -20,12 +20,21 @@ import {Ec2ScriptRunner} from './ec2-script-runner';
 export const DRAGONFLY_METRIC_NAMESPACE = (env: string) => `CTech/${env}/Dragonfly`;
 
 /**
- * Dataset cap, not process RSS. Dragonfly sits at roughly dataset + 20-40% once
- * connection buffers and the proactor arena are counted, and it shares a 512 MiB
- * t4g.nano with the SSM and CloudWatch agents. 64 MiB is the working-set size the
- * CTech services actually need; the rest of the box is headroom on purpose.
+ * Dragonfly refuses to start when `--maxmemory` is below 256 MiB per proactor
+ * thread ("There are 1 threads, so 256.00MiB are required. Exiting..."), so this
+ * is a floor, not a sizing choice - the working set the CTech services actually
+ * need is closer to 64 MiB. It is a dataset cap, not process RSS, and the box is
+ * a 512 MiB t4g.nano shared with the SSM and CloudWatch agents, so the cap alone
+ * is no longer the guard against filling the host; RSS_OOM_DENY_RATIO is.
  */
-const MAXMEMORY = '64mb';
+const MAXMEMORY = '256mb';
+
+/**
+ * Writes are OOM-denied once RSS reaches this fraction of `--maxmemory`, i.e.
+ * ~180 MiB here. The default 1.25 assumes a host sized for maxmemory; on a nano
+ * that would hand the OOM killer the process instead.
+ */
+const RSS_OOM_DENY_RATIO = 0.7;
 
 /** /0 cache, /1 ws pub/sub, /2+ per service. 8 leaves room without paying for 128. */
 const DBNUM = 8;
@@ -169,6 +178,7 @@ export class DragonflyStack extends cdk.Stack {
       '--port=6379',
       '--cache_mode=true',
       `--maxmemory=${MAXMEMORY}`,
+      `--rss_oom_deny_ratio=${RSS_OOM_DENY_RATIO}`,
       `--dbnum=${DBNUM}`,
       // Default is one proactor per core; the nano has two, and a second thread
       // only buys a second set of arenas on a box this size.
@@ -438,7 +448,7 @@ export class DragonflyStack extends cdk.Stack {
     // an ASG-managed host possible at all.
     new cloudwatch.Alarm(this, 'DragonflyHighMemAlarm', {
       alarmName: `${environment}-ctech-dragonfly-high-mem`,
-      alarmDescription: `Dragonfly host RAM > 80% - lower --maxmemory (now ${MAXMEMORY}) or upgrade the instance`,
+      alarmDescription: `Dragonfly host RAM > 80% - lower --rss_oom_deny_ratio (now ${RSS_OOM_DENY_RATIO} of ${MAXMEMORY}) or upgrade the instance`,
       metric: new cloudwatch.Metric({
         namespace: DRAGONFLY_METRIC_NAMESPACE(environment),
         metricName: 'mem_used_percent',

@@ -30,7 +30,10 @@ function synth() {
 
 test('runs the release binary with flags sized for a 512 MiB t4g.nano', () => {
   const {json} = synth();
-  assert.match(json, /--maxmemory=64mb/);
+  // Dragonfly exits at boot below 256 MiB per proactor thread, so this is a
+  // floor; --rss_oom_deny_ratio is what actually protects the 512 MiB host.
+  assert.match(json, /--maxmemory=256mb/);
+  assert.match(json, /--rss_oom_deny_ratio=0\.7/);
   assert.match(json, /--dbnum=8/);
   // One proactor per core is the default; the nano has two and a second set of
   // arenas is pure overhead here.

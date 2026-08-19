@@ -208,7 +208,8 @@ Flag choices are driven by the 512 MiB t4g.nano:
 
 | Flag | Value | Why |
 | --- | --- | --- |
-| `--maxmemory` | `64mb` | Dataset cap, not process RSS — Dragonfly sits around dataset + 20-40%, and it shares the box with the SSM and CloudWatch agents |
+| `--maxmemory` | `256mb` | Hard floor, not a sizing choice: Dragonfly exits with `There are 1 threads, so 256.00MiB are required` below 256 MiB per proactor thread. Dataset cap, not process RSS |
+| `--rss_oom_deny_ratio` | `0.7` | Denies OOM-prone writes at ~180 MiB RSS. The 1.25 default assumes a host sized for `--maxmemory`; on a 512 MiB nano it would feed the OOM killer |
 | `--proactor_threads` | `1` | Default is one per core; a second thread on a nano only buys a second set of arenas |
 | `--dbnum` | `8` | `/0` cache, `/1` ws pub/sub, `/2+` per service |
 | `--dbfilename` | empty | Disables the shutdown snapshot on a cache that is scaled to zero nightly |
@@ -225,8 +226,10 @@ during the gap - Pub/Sub is fire-and-forget either way.
 
 `--cache_mode` does not affect Pub/Sub: messages are not keyspace entries, and
 `PUBLISH` is not an OOM-denied command. It only decides what happens to keys at
-the 64 MiB cap - eviction, versus every write failing, including the wallet
-`SETNX` lock.
+the cap - eviction, versus every write failing, including the wallet `SETNX`
+lock. On this box the binding limit is `--rss_oom_deny_ratio`, not the 256 MiB
+dataset cap: the real working set is around 64 MiB, so eviction at 256 MiB would
+never fire before the host ran out of RAM.
 
 The instance also gets 512 MiB of swap through `setup-swap.sh`. Without it the
 OOM killer picks the largest RSS — Dragonfly — and `Restart=always` brings it
