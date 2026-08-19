@@ -105,3 +105,24 @@ test('setup-cloudwatch-agent.sh requires a config file and runs fetch-config', (
   assert.match(body, /CONFIG="\$\{1:\?/);
   assert.match(body, /amazon-cloudwatch-agent-ctl -a fetch-config -m ec2/);
 });
+
+test('setup-deploy.sh keeps the health-gated release swap', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
+  assert.match(body, /ln -sfT "\$RELEASE_DIR" \/opt\/app\/current/);
+  assert.match(body, /systemctl is-failed --quiet app/);
+  assert.match(body, /journalctl -u app --no-pager/);
+  assert.match(body, /tail -n \+2 \| xargs rm -rf/, 'must prune all but the live release');
+});
+
+test('setup-logs.sh never fails the logrotate run', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-logs.sh'), 'utf8');
+  assert.match(body, /X-aws-ec2-metadata-token-ttl-seconds/, 'IMDSv2 is enforced');
+  assert.match(body, /\|\| exit 0/, 'every failure path must exit 0');
+  assert.match(body, /postrotate/);
+});
+
+test('bootstrap-deploy.sh tolerates a missing first artifact', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'bootstrap-deploy.sh'), 'utf8');
+  assert.match(body, /s3api head-object/);
+  assert.match(body, /waiting for first deploy/);
+});
