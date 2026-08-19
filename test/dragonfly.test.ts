@@ -40,6 +40,14 @@ test('runs the release binary with flags sized for a 512 MiB t4g.nano', () => {
   assert.match(json, /--cache_mode=true/);
 });
 
+test('bounds pub/sub buffers, which are not covered by --maxmemory', () => {
+  const {json} = synth();
+  // Defaults are 196 MB soft (x4 hard) and 128 MB per IO thread, on a 512 MiB box.
+  assert.match(json, /--publish_buffer_limit=16mb/);
+  assert.match(json, /--pipeline_buffer_limit=32mb/);
+  assert.match(json, /--pubsub_slow_subscriber_timeout_ms=5000/);
+});
+
 test('gives the instance swap so an OOM kill cannot silently empty the cache', () => {
   const {json} = synth();
   assert.match(json, /ctech_run setup-swap\.sh '512'/);

@@ -177,6 +177,16 @@ export class DragonflyStack extends cdk.Stack {
       // is an ephemeral cache scaled to zero every night, so the dump would only
       // slow shutdown down.
       '--dbfilename=',
+      // Pub/Sub back-pressure. The defaults are sized for a large host: the soft
+      // limit is 196 MB per IO thread and the hard limit is 4x that, so a single
+      // slow PSUBSCRIBE - which is exactly what ctech-go-common/ws does, one per
+      // API instance - could queue more than the whole box before a publisher is
+      // ever parked. None of it counts against --maxmemory.
+      '--publish_buffer_limit=16mb',
+      '--pipeline_buffer_limit=32mb',
+      // Off by default. Without it a subscriber that stops draining parks every
+      // publisher instead of being dropped; the ws registry resubscribes on close.
+      '--pubsub_slow_subscriber_timeout_ms=5000',
       '--primary_port_http_enabled=false',
       '--tcp_keepalive=60',
       '--timeout=0',

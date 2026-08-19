@@ -213,6 +213,20 @@ Flag choices are driven by the 512 MiB t4g.nano:
 | `--dbnum` | `8` | `/0` cache, `/1` ws pub/sub, `/2+` per service |
 | `--dbfilename` | empty | Disables the shutdown snapshot on a cache that is scaled to zero nightly |
 | `--cache_mode` | `true` | Evicts under pressure instead of failing writes; matches the previous `allkeys-lru` |
+| `--publish_buffer_limit` | `16mb` | Default is 196 MB per IO thread, and the hard limit is 4x the soft one |
+| `--pipeline_buffer_limit` | `32mb` | Default is 128 MB per IO thread |
+| `--pubsub_slow_subscriber_timeout_ms` | `5000` | Off by default; drops a subscriber that stopped draining instead of parking every publisher |
+
+Pub/Sub buffers are process memory and are **not** counted against
+`--maxmemory`. `ctech-go-common/ws` holds one `PSUBSCRIBE` connection per API
+instance (ctech-dfe websockets), so a single slow consumer is enough to reach
+those limits. It resubscribes on close, at the cost of the messages published
+during the gap - Pub/Sub is fire-and-forget either way.
+
+`--cache_mode` does not affect Pub/Sub: messages are not keyspace entries, and
+`PUBLISH` is not an OOM-denied command. It only decides what happens to keys at
+the 64 MiB cap - eviction, versus every write failing, including the wallet
+`SETNX` lock.
 
 The instance also gets 512 MiB of swap through `setup-swap.sh`. Without it the
 OOM killer picks the largest RSS — Dragonfly — and `Restart=always` brings it
