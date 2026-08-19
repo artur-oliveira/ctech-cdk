@@ -75,3 +75,33 @@ test('setup-nginx.sh exposes both extension points and never double-includes rea
   assert.doesNotMatch(body, /proxy_add_x_forwarded_for/);
   assert.match(body, /nginx -t/);
 });
+
+test('setup-ssm-env.sh rejects an argument that is not VAR=/path', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
+  assert.match(body, /expected VAR=\/ssm\/path/);
+  assert.match(body, /printf '%s=\$\(_ctech_ssm %q\)/, 'paths must be shell-quoted with %q');
+});
+
+test('setup-ssm-env.sh generates a loader read at service start, not at boot', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
+  assert.match(body, /\/opt\/app\/load-ssm-env\.sh/);
+  // The generated file must contain the aws call, not its result.
+  assert.match(body, /aws ssm get-parameter/);
+});
+
+test('setup-app-service.sh sources the three env layers in order', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-app-service.sh'), 'utf8');
+  const release = body.indexOf('release.env');
+  const ssmEnv = body.indexOf('load-ssm-env.sh');
+  const serviceEnv = body.indexOf('service-env.sh');
+  const exec = body.indexOf('exec /opt/app/current/');
+  assert.ok(release > 0 && ssmEnv > release && serviceEnv > ssmEnv && exec > serviceEnv,
+    'start.sh must source release.env, then load-ssm-env.sh, then service-env.sh, then exec');
+  assert.match(body, /EnvironmentFile=\/etc\/app-static\.env/);
+});
+
+test('setup-cloudwatch-agent.sh requires a config file and runs fetch-config', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-cloudwatch-agent.sh'), 'utf8');
+  assert.match(body, /CONFIG="\$\{1:\?/);
+  assert.match(body, /amazon-cloudwatch-agent-ctl -a fetch-config -m ec2/);
+});
