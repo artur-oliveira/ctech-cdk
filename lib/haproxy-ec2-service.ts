@@ -18,6 +18,51 @@ export interface HaproxyRouteRegistrationProps {
   internalLoadBalancerHostname?: string;
 }
 
+export interface AsgScheduleProps {
+  /** UNIX cron, 5 fields. Default '0 1 * * *'. */
+  disableCron?: string;
+  /** UNIX cron, 5 fields. Default '0 8 * * *'. */
+  enableCron?: string;
+  /** IANA time zone. Default 'America/Sao_Paulo' — AWS defaults to UTC. */
+  timeZone?: string;
+}
+
+export const DEFAULT_ASG_SCHEDULE = {
+  disableCron: '0 1 * * *',
+  enableCron: '0 8 * * *',
+  timeZone: 'America/Sao_Paulo',
+} as const;
+
+/**
+ * Registers the nightly stop/start pair.
+ *
+ * `enable` restores the capacity the ASG was configured with; a scheduled action
+ * that leaves min/max at 0 is a one-way switch, not a schedule.
+ */
+export function addAsgSchedule(
+  asg: autoscaling.AutoScalingGroup,
+  capacity: {minCapacity: number; maxCapacity: number; desiredCapacity?: number},
+  schedule: AsgScheduleProps,
+): void {
+  const timeZone = schedule.timeZone ?? DEFAULT_ASG_SCHEDULE.timeZone;
+
+  asg.scaleOnSchedule('ScheduledDisable', {
+    schedule: autoscaling.Schedule.expression(schedule.disableCron ?? DEFAULT_ASG_SCHEDULE.disableCron),
+    timeZone,
+    minCapacity: 0,
+    maxCapacity: 0,
+    desiredCapacity: 0,
+  });
+
+  asg.scaleOnSchedule('ScheduledEnable', {
+    schedule: autoscaling.Schedule.expression(schedule.enableCron ?? DEFAULT_ASG_SCHEDULE.enableCron),
+    timeZone,
+    minCapacity: capacity.minCapacity,
+    maxCapacity: capacity.maxCapacity,
+    desiredCapacity: capacity.desiredCapacity ?? capacity.minCapacity,
+  });
+}
+
 export interface HaproxyEc2ServiceProps {
   vpc: ec2.IVpc;
   edgeSecurityGroup: ec2.ISecurityGroup;
@@ -41,6 +86,7 @@ export interface HaproxyEc2ServiceProps {
   cooldown?: cdk.Duration;
   cpuTargetUtilizationPercent?: number;
   route?: HaproxyRouteRegistrationProps;
+  schedule?: AsgScheduleProps;
 }
 
 /**
@@ -99,7 +145,7 @@ export class HaproxyEc2Service extends Construct {
     this.launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
       launchTemplateName: `${props.asgName}-lt`,
       instanceType: props.instanceType
-        ?? ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
+        ?? ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
       machineImage: props.machineImage ?? ec2.MachineImage.latestAmazonLinux2023({
         cpuType: ec2.AmazonLinuxCpuType.ARM_64,
         edition: ec2.AmazonLinuxEdition.MINIMAL,
@@ -148,6 +194,10 @@ export class HaproxyEc2Service extends Construct {
         targetUtilizationPercent: props.cpuTargetUtilizationPercent ?? 60,
         cooldown: cdk.Duration.minutes(3),
       });
+    }
+
+    if (props.schedule) {
+      addAsgSchedule(this.autoScalingGroup, props, props.schedule);
     }
 
     if (props.route) {

@@ -9,6 +9,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Environment} from './types';
 import {SSM} from './constants';
+import {addAsgSchedule, AsgScheduleProps} from './haproxy-ec2-service';
 
 // Shared CW namespace used by all services to signal cache unavailability.
 // Services publish CacheUnavailable=1 when running on NoCacheBackend.
@@ -20,6 +21,7 @@ interface ValkeyStackProps extends cdk.StackProps {
   environment: Environment;
   vpc: ec2.Vpc;
   privateHostedZone?: route53.IPrivateHostedZone;
+  schedule?: AsgScheduleProps;
 }
 
 export class ValkeyStack extends cdk.Stack {
@@ -199,7 +201,7 @@ export class ValkeyStack extends cdk.Stack {
     // ── Launch Template ───────────────────────────────────────────────────────
     const launchTemplate = new ec2.LaunchTemplate(this, 'ValkeyLaunchTemplate', {
       launchTemplateName: `${environment}-ctech-valkey-lt`,
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
       machineImage: ec2.MachineImage.latestAmazonLinux2023({
         cpuType: ec2.AmazonLinuxCpuType.ARM_64,
         edition: ec2.AmazonLinuxEdition.MINIMAL,
@@ -251,7 +253,8 @@ export class ValkeyStack extends cdk.Stack {
           statistic: 'Sum',
           period: cdk.Duration.minutes(1),
         }),
-        scalingSteps: [{lower: 1, change: +1}],
+        // CDK requires at least two intervals: the 0 bucket is an explicit no-op.
+        scalingSteps: [{upper: 0, change: 0}, {lower: 1, change: +1}],
         adjustmentType: autoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
         cooldown: cdk.Duration.minutes(5),
         evaluationPeriods: 2,
@@ -267,12 +270,19 @@ export class ValkeyStack extends cdk.Stack {
           statistic: 'Average',
           period: cdk.Duration.minutes(5),
         }),
-        scalingSteps: [{upper: 0, change: -1}],
+        scalingSteps: [{upper: 0, change: -1}, {lower: 1, change: 0}],
         adjustmentType: autoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
         cooldown: cdk.Duration.minutes(30),
         evaluationPeriods: 6,
         datapointsToAlarm: 6,
       });
+    }
+
+    // Nightly stop/start. Applied to every environment, production included:
+    // treat the cache as unavailable in the window, exactly as when the ASG is
+    // being replaced. prod's minCapacity is 1, so enable restores one instance.
+    if (props.schedule) {
+      addAsgSchedule(asg, {minCapacity: isProd ? 1 : 0, maxCapacity: 1}, props.schedule);
     }
 
     // ── RAM monitoring alarm (informational for all environments) ─────────────

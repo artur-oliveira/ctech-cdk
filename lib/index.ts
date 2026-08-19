@@ -28,4 +28,7 @@ export {
   HaproxyEc2Service,
   HaproxyEc2ServiceProps,
   HaproxyRouteRegistrationProps,
+  AsgScheduleProps,
+  DEFAULT_ASG_SCHEDULE,
+  addAsgSchedule,
 } from './haproxy-ec2-service';

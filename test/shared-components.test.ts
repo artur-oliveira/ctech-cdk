@@ -127,3 +127,67 @@ test('buildCloudWatchAgentConfig emits compact JSON to conserve user data', () =
   assert.doesNotMatch(config, /\n/, 'config must be a single line');
   assert.ok(JSON.parse(config));
 });
+
+test('HaproxyEc2Service schedules disable to zero and enable back to configured capacity', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'ScheduleFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+  });
+  const vpc = new ec2.Vpc(stack, 'Vpc');
+  new HaproxyEc2Service(stack, 'Svc', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 3,
+    schedule: {},
+  });
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
+    Recurrence: '0 1 * * *',
+    TimeZone: 'America/Sao_Paulo',
+    MinSize: 0,
+    MaxSize: 0,
+    DesiredCapacity: 0,
+  });
+  template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
+    Recurrence: '0 8 * * *',
+    TimeZone: 'America/Sao_Paulo',
+    MinSize: 1,
+    MaxSize: 3,
+    DesiredCapacity: 1,
+  });
+});
+
+test('HaproxyEc2Service registers no scheduled action when schedule is omitted', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'NoScheduleFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+  });
+  const vpc = new ec2.Vpc(stack, 'Vpc');
+  new HaproxyEc2Service(stack, 'Svc', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 1,
+  });
+  Template.fromStack(stack).resourceCountIs('AWS::AutoScaling::ScheduledAction', 0);
+});

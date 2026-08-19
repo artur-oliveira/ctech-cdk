@@ -75,5 +75,7 @@ new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-Valkey`, {
   environment: ENVIRONMENT,
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
+  // Nightly stop/start with the shared defaults (01:00–08:00 BRT down).
+  schedule: {},
   description: `CTech Shared Valkey Cache - ${ENVIRONMENT}`,
 });
