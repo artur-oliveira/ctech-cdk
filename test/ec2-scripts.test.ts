@@ -45,3 +45,13 @@ test('setup-dualstack.sh opts every AWS client into the dual-stack endpoint', ()
   assert.match(body, /\/etc\/amazon\/ssm\/amazon-ssm-agent\.json/);
   assert.match(body, /amazon-cloudwatch-agent\.service\.d\/override\.conf/);
 });
+
+test('setup-cloudflare-ca.sh pins the official RSA root by SHA-256', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-cloudflare-ca.sh'), 'utf8');
+  assert.match(body, /origin_ca_rsa_root\.pem/);
+  assert.match(body, /91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/);
+  assert.match(body, /sha256sum --check --strict/);
+  assert.match(body, /openssl x509 .*-checkend 86400/);
+  assert.match(body, /update-ca-trust extract/);
+  assert.doesNotMatch(body, /BEGIN CERTIFICATE|origin_ca_ecc_root\.pem/);
+});
