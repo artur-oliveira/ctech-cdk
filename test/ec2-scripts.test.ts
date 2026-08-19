@@ -31,3 +31,17 @@ test('no EC2 asset script contains CDK or Terraform templating', () => {
     assert.doesNotMatch(body, /\$\{\s*[a-z_]+\s*\}\s*#\s*terraform/i, `${name}: contains Terraform templating`);
   }
 });
+
+test('setup-base.sh requires a service name and enables crond', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-base.sh'), 'utf8');
+  assert.match(body, /SERVICE="\$\{1:\?/, 'service name must be a required argument');
+  assert.match(body, /systemctl enable --now crond/);
+  assert.match(body, /useradd --system --no-create-home --shell \/sbin\/nologin webapp/);
+});
+
+test('setup-dualstack.sh opts every AWS client into the dual-stack endpoint', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-dualstack.sh'), 'utf8');
+  assert.match(body, /\/etc\/environment/);
+  assert.match(body, /\/etc\/amazon\/ssm\/amazon-ssm-agent\.json/);
+  assert.match(body, /amazon-cloudwatch-agent\.service\.d\/override\.conf/);
+});
