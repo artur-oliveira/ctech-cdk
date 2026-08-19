@@ -64,3 +64,14 @@ test('setup-realip.sh refuses a partial CloudFront prefix list and requires a CI
   assert.match(body, /real_ip_recursive on/);
   assert.match(body, /systemctl enable --now update-realip\.timer/);
 });
+
+test('setup-nginx.sh exposes both extension points and never double-includes realip', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-nginx.sh'), 'utf8');
+  assert.match(body, /include \/etc\/nginx\/conf\.d\/realip\*\.conf;/);
+  assert.match(body, /include \/etc\/nginx\/conf\.d\/http-\*\.conf;/);
+  assert.match(body, /include \/etc\/nginx\/conf\.d\/location-\*\.conf;/);
+  assert.doesNotMatch(body, /include \/etc\/nginx\/conf\.d\/\*\.conf;/);
+  assert.match(body, /proxy_set_header X-Forwarded-For \$remote_addr;/);
+  assert.doesNotMatch(body, /proxy_add_x_forwarded_for/);
+  assert.match(body, /nginx -t/);
+});
