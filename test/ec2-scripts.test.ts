@@ -75,6 +75,7 @@ test('setup-nginx.sh exposes both extension points and never double-includes rea
   assert.match(body, /include \/etc\/nginx\/conf\.d\/realip\*\.conf;/);
   assert.match(body, /include \/etc\/nginx\/conf\.d\/http-\*\.conf;/);
   assert.match(body, /include \/etc\/nginx\/conf\.d\/location-\*\.conf;/);
+  assert.match(body, /include \/etc\/nginx\/conf\.d\/proxy-\*\.conf;/);
   assert.doesNotMatch(body, /include \/etc\/nginx\/conf\.d\/\*\.conf;/);
   assert.match(body, /proxy_set_header X-Forwarded-For \$remote_addr;/);
   assert.doesNotMatch(body, /proxy_add_x_forwarded_for/);

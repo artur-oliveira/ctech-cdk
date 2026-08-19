@@ -4,8 +4,9 @@
 # is reached straight from HAProxy and does not call this script.
 #
 # Two extension points, because services differ in ways that do not belong here:
-#   /etc/nginx/conf.d/http-*.conf      included inside http {}   (extra limit_req_zone, map)
-#   /etc/nginx/conf.d/location-*.conf  included inside server {} (extra locations)
+#   /etc/nginx/conf.d/http-*.conf      included inside http {}       (extra limit_req_zone, map)
+#   /etc/nginx/conf.d/location-*.conf  included inside server {}     (extra locations)
+#   /etc/nginx/conf.d/proxy-*.conf     included inside location / {} (extra limit_req/limit_conn)
 # realip.conf matches neither glob and is included on its own line, exactly once.
 #
 # Usage: setup-nginx.sh <nginx-port> <app-port> <health-path> [rate-per-second] [max-body]
@@ -129,6 +130,11 @@ http {
         location / {
             limit_req  zone=req_by_ip burst=200 nodelay;
             limit_conn conn_by_ip 100;
+            # Per-service limits for the catch-all proxy. They cannot live in
+            # http {}: a location that declares any limit_req stops inheriting
+            # the http-level ones, so a per-tenant zone would be silently
+            # ignored here.
+            include /etc/nginx/conf.d/proxy-*.conf;
 
             proxy_pass http://app;
             proxy_http_version 1.1;

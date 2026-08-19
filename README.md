@@ -237,9 +237,15 @@ The instance role needs `s3:GetObject` on the scripts bucket:
 `scripts.grantRead(role)`.
 
 Only values CloudFormation has to resolve stay inline: bucket names, log group
-names, the CloudWatch agent JSON, and `/etc/app-static.env`. Per-service nginx
-locations go in `/etc/nginx/conf.d/location-*.conf`; per-service derived
-environment variables go in `/opt/app/service-env.sh`.
+names, the CloudWatch agent JSON, and `/etc/app-static.env`. Per-service derived
+environment variables go in `/opt/app/service-env.sh`. `setup-nginx.sh` has three
+extension points, all optional:
+
+| File | Included in | Use for |
+|---|---|---|
+| `/etc/nginx/conf.d/http-*.conf` | `http {}` | extra `limit_req_zone`, `map`, gzip overrides |
+| `/etc/nginx/conf.d/location-*.conf` | `server {}` | extra `location` blocks |
+| `/etc/nginx/conf.d/proxy-*.conf` | `location / {}` | extra `limit_req` / `limit_conn` on the catch-all |
 
 The scripts themselves live in `assets/ec2/` in this repository. Editing one
 changes the asset hash, which changes every consuming service's user data on its
