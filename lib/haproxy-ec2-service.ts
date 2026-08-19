@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import {CfnScalableTarget} from "aws-cdk-lib/aws-applicationautoscaling";
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -41,26 +42,32 @@ export const DEFAULT_ASG_SCHEDULE = {
  */
 export function addAsgSchedule(
   asg: autoscaling.AutoScalingGroup,
-  capacity: {minCapacity: number; maxCapacity: number; desiredCapacity?: number},
+  capacity: { minCapacity: number; maxCapacity: number; desiredCapacity?: number },
   schedule: AsgScheduleProps,
 ): void {
   const timeZone = schedule.timeZone ?? DEFAULT_ASG_SCHEDULE.timeZone;
-
-  asg.scaleOnSchedule('ScheduledDisable', {
+  
+  const disabledTarget = asg.scaleOnSchedule('ScheduledDisable', {
     schedule: autoscaling.Schedule.expression(schedule.disableCron ?? DEFAULT_ASG_SCHEDULE.disableCron),
     timeZone,
     minCapacity: 0,
     maxCapacity: 0,
     desiredCapacity: 0,
   });
-
-  asg.scaleOnSchedule('ScheduledEnable', {
+  
+  const enabledTarget = asg.scaleOnSchedule('ScheduledEnable', {
     schedule: autoscaling.Schedule.expression(schedule.enableCron ?? DEFAULT_ASG_SCHEDULE.enableCron),
     timeZone,
     minCapacity: capacity.minCapacity,
     maxCapacity: capacity.maxCapacity,
     desiredCapacity: capacity.desiredCapacity ?? capacity.minCapacity,
   });
+  
+  const cfnDisabledAction = disabledTarget.node.defaultChild as CfnScalableTarget;
+  cfnDisabledAction.addPropertyOverride('ScheduledActionName', 'asg-scheduled-disable');
+  
+  const enabledAction = enabledTarget.node.defaultChild as CfnScalableTarget;
+  enabledAction.addPropertyOverride('ScheduledActionName', 'asg-scheduled-enable');
 }
 
 export interface HaproxyEc2ServiceProps {
@@ -105,17 +112,17 @@ export class HaproxyEc2Service extends Construct {
   public readonly launchTemplate: ec2.LaunchTemplate;
   public readonly autoScalingGroup: autoscaling.AutoScalingGroup;
   public readonly routeParameter?: ssm.StringParameter;
-
+  
   constructor(scope: Construct, id: string, props: HaproxyEc2ServiceProps) {
     super(scope, id);
-
+    
     if (props.minCapacity < 0 || props.maxCapacity < props.minCapacity) {
       throw new Error('ASG capacity must satisfy 0 <= minCapacity <= maxCapacity');
     }
     if (props.appPort < 1 || props.appPort > 65535) {
       throw new Error('appPort must be between 1 and 65535');
     }
-
+    
     this.securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
       vpc: props.vpc,
       securityGroupName: props.securityGroupName,
@@ -128,7 +135,7 @@ export class HaproxyEc2Service extends Construct {
       ec2.Port.tcp(props.appPort),
       'CTech HAProxy edge to service',
     );
-
+    
     this.appLogGroup = new logs.LogGroup(this, 'AppLogGroup', {
       logGroupName: props.appLogGroupName,
       retention: props.logRetention,
@@ -141,7 +148,7 @@ export class HaproxyEc2Service extends Construct {
         removalPolicy: props.logRemovalPolicy,
       });
     }
-
+    
     this.launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
       launchTemplateName: `${props.asgName}-lt`,
       instanceType: props.instanceType
@@ -175,7 +182,17 @@ export class HaproxyEc2Service extends Construct {
       AssociatePublicIpAddress: false,
       Ipv6AddressCount: 1,
     }]);
-
+    cfnLaunchTemplate.addPropertyOverride(
+      'LaunchTemplateData.TagSpecifications',
+      [{
+        ResourceType: 'instance',
+        Tags: [{
+          Key: 'Name',
+          Value: props.asgName,
+        }],
+      }],
+    );
+    
     this.autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'AutoScalingGroup', {
       autoScalingGroupName: props.asgName,
       vpc: props.vpc,
@@ -195,16 +212,16 @@ export class HaproxyEc2Service extends Construct {
         cooldown: cdk.Duration.minutes(3),
       });
     }
-
+    
     if (props.schedule) {
       addAsgSchedule(this.autoScalingGroup, props, props.schedule);
     }
-
+    
     if (props.route) {
       this.routeParameter = this.createRoute(props.route, props.appPort, props.asgName);
     }
   }
-
+  
   private createRoute(
     route: HaproxyRouteRegistrationProps,
     appPort: number,
@@ -231,7 +248,7 @@ export class HaproxyEc2Service extends Construct {
         'internalHostname, privateHostedZone and internalLoadBalancerHostname must be provided together',
       );
     }
-
+    
     const parameter = new ssm.StringParameter(this, 'RouteParameter', {
       parameterName: route.parameterName,
       tier: ssm.ParameterTier.STANDARD,
@@ -246,7 +263,7 @@ export class HaproxyEc2Service extends Construct {
       }),
       description: `HAProxy route for ${route.hostname}`,
     });
-
+    
     if (hasAllPrivateDns) {
       const zone = route.privateHostedZone!;
       const suffix = `.${zone.zoneName}`;
