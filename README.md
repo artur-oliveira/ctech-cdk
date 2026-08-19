@@ -4,7 +4,7 @@ AWS CDK (TypeScript) for shared, account-level CTech infrastructure and the
 `@aoctech/cdk` package used by service CDKs.
 
 The deployed platform owns the dual-stack VPC, GitHub Actions OIDC provider,
-shared S3 buckets, the production private hosted zone, and the shared Valkey
+shared S3 buckets, the production private hosted zone, and the shared Dragonfly
 cache. Public and private API ingress is provided by
 [ctech-lbalancer](https://github.com/artur-oliveira/ctech-lbalancer), not by an
 AWS Application Load Balancer.
@@ -30,15 +30,19 @@ Ctech-{Env}-S3
       ├── objects >128 KiB → Glacier Flexible Retrieval after 90 days
       └── all objects expire after 400 days; bucket remains retained
 
-Ctech-{Env}-Valkey
-  ├── Valkey on an EC2 Auto Scaling Group
-  ├── prod desired/min/max = 1/1/1
-  ├── non-prod can scale to zero
+Ctech-{Env}-Ec2Scripts
+  ├── {env}-ctech-ec2-scripts, objects under a content-hash prefix
+  └── /ctech/{env}/ec2-scripts/{bucket,version}
+
+Ctech-{Env}-Dragonfly
+  ├── DragonflyDB on an EC2 Auto Scaling Group, t4g.nano
+  ├── desired/min/max = 1/1/1 in every environment
+  ├── nightly schedule takes it to zero 22:00-10:00 BRT
   └── cache.internal.aoctech.app + /ctech/{env}/valkey/url
 ```
 
-Only `GlobalStack`, `NetworkStack`, `S3Stack`, and `ValkeyStack` are
-instantiated by `bin/ctech-cdk.ts`. `lib/alb-stack.ts` and
+Only `GlobalStack`, `NetworkStack`, `S3Stack`, `Ec2ScriptsStack`, and
+`DragonflyStack` are instantiated by `bin/ctech-cdk.ts`. `lib/alb-stack.ts` and
 `PrivateIpv4Ec2Service` are retained as legacy migration code; neither
 represents the current production ingress architecture.
 
@@ -81,7 +85,7 @@ configuration, and updates the Cloudflare origin AAAA record.
 | `/ctech/{env}/network/alb-sg-id` | Compatibility name for the shared edge SG |
 | `/ctech/{env}/s3/deployments-bucket` | Shared deployment-artifact bucket |
 | `/ctech/{env}/s3/logs-bucket` | Shared application-log archive bucket |
-| `/ctech/{env}/valkey/url` | Valkey base URL; consumers append their DB number |
+| `/ctech/{env}/valkey/url` | Cache base URL (now Dragonfly); consumers append their DB number |
 | `/ctech/{env}/ec2-scripts/bucket` | Bucket holding the shared EC2 bootstrap scripts |
 | `/ctech/{env}/ec2-scripts/version` | Content hash of `assets/ec2`, and the S3 key prefix the scripts live under |
 
@@ -176,13 +180,57 @@ URL, and Poker's private Wallet URL. It deliberately does not overwrite ctech-ac
 contracts and must remain public. Dev/stage private URLs require their VPC to
 be associated with the private hosted zone before use.
 
+## Shared cache (Dragonfly)
+
+`DragonflyStack` replaces `ValkeyStack` and deliberately keeps its contract:
+the same `/ctech/{env}/valkey/url` parameter and the same
+`cache.internal.aoctech.app` record, so no service repository changes. The two
+stacks own the same parameter and the same record and cannot coexist. Cut over
+one environment at a time:
+
+```bash
+aws cloudformation delete-stack --stack-name Ctech-{Env}-Valkey
+ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Dragonfly
+```
+
+The cache is empty on both sides of that gap by design. `lib/valkey-stack.ts`
+is kept only so the previous template can still be read; nothing instantiates
+it.
+
+The binary is the official `dragonfly-aarch64` release, downloaded and verified
+against a SHA-256 pinned in `assets/dragonfly/install.sh` and republished as a
+CDK asset — the instance has no NAT and no public IPv4, so it can only fetch
+from S3. Version and digest live in that script rather than in TypeScript
+because the asset hash is the hash of the directory: editing the script is what
+invalidates the S3 object and versions the launch template.
+
+Flag choices are driven by the 512 MiB t4g.nano:
+
+| Flag | Value | Why |
+| --- | --- | --- |
+| `--maxmemory` | `64mb` | Dataset cap, not process RSS — Dragonfly sits around dataset + 20-40%, and it shares the box with the SSM and CloudWatch agents |
+| `--proactor_threads` | `1` | Default is one per core; a second thread on a nano only buys a second set of arenas |
+| `--dbnum` | `8` | `/0` cache, `/1` ws pub/sub, `/2+` per service |
+| `--dbfilename` | empty | Disables the shutdown snapshot on a cache that is scaled to zero nightly |
+| `--cache_mode` | `true` | Evicts under pressure instead of failing writes; matches the previous `allkeys-lru` |
+
+The instance also gets 512 MiB of swap through `setup-swap.sh`. Without it the
+OOM killer picks the largest RSS — Dragonfly — and `Restart=always` brings it
+back empty, which presents as a healthy cache that silently lost everything.
+
+A boot that never gets a `PONG` within 60 seconds calls
+`autoscaling:SetInstanceHealth` on itself: the ASG health check is EC2-level
+and would otherwise keep an empty instance serving the DNS record. There is no
+scale-from-zero policy, because that needs a metric published while the cache
+is down and nothing in the organisation publishes one.
+
 ## Cost and resilience constraints
 
 - The VPC has zero NAT Gateways; workloads use IPv6 and free gateway endpoints.
-- Production Valkey intentionally remains one `t4g.micro` instance with no persistence
-  (`save ""`, `appendonly no`). It is a cache/pub-sub service, not a durable
-  store. Clustering/sharding is deferred because its operational complexity and
-  extra compute are not justified by the present traffic or SLO.
+- Dragonfly intentionally remains one `t4g.nano` instance with no persistence
+  (`--dbfilename=`). It is a cache/pub-sub service, not a durable store.
+  Clustering/sharding is deferred because its operational complexity and extra
+  compute are not justified by the present traffic or SLO.
 - Production LBalancer intentionally remains one instance because Cloudflare's
   origin is one IPv6 address. Multiple nodes require a separate multi-origin or
   balancing strategy and would add cost without a demonstrated availability

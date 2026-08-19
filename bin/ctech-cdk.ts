@@ -5,9 +5,9 @@ import {GlobalStack} from '../lib/global-stack';
 import {NetworkStack} from '../lib/network-stack';
 import {S3Stack} from '../lib/s3-stack';
 import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
-import {ValkeyStack} from '../lib/valkey-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
+import {DragonflyStack} from "../lib/dragonfly-stack";
 
 const app = new cdk.App();
 
@@ -67,15 +67,22 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
 });
 
 // =====================
-// Shared Valkey cache (EC2 ASG, private; prod keeps one instance, non-prod can scale to zero)
-// All services share one instance, each using a different Redis DB number.
+// Shared Dragonfly cache and pub/sub endpoint (EC2 ASG, private, one instance).
+// Replaces ValkeyStack and keeps its contract: same /ctech/{env}/valkey/url and
+// same cache.internal.aoctech.app record, so no service repository changes.
+//
+// The two stacks own the same parameter and the same DNS record, so they cannot
+// coexist. Cut over per environment by deleting the Valkey stack first:
+//   aws cloudformation delete-stack --stack-name Ctech-{Env}-Valkey
+//   ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Dragonfly
+// The cache is empty on both sides of that gap by design.
 // =====================
-new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-Valkey`, {
+new DragonflyStack(app, `Ctech-${cap(ENVIRONMENT)}-Dragonfly`, {
   env,
   environment: ENVIRONMENT,
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
   // Nightly stop/start with the shared defaults (22:00–10:00 BRT down).
   schedule: {},
-  description: `CTech Shared Valkey Cache - ${ENVIRONMENT}`,
+  description: `CTech Shared Dragonfly Cache - ${ENVIRONMENT}`,
 });

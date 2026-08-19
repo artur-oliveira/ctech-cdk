@@ -10,7 +10,9 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
 - `NetworkStack`: dual-stack/no-NAT VPC, gateway endpoints, shared edge SG, and
   the production private hosted zone;
 - `S3Stack`: shared deployments and application-log buckets;
-- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint;
+- `DragonflyStack`: shared EC2/ASG cache and pub/sub endpoint, replacing
+  `ValkeyStack` while keeping its `/ctech/{env}/valkey/url` and
+  `cache.internal.aoctech.app` contract;
 - `Ec2ScriptsStack`: shared EC2 bootstrap scripts published under a content-hash
   prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers.
 
@@ -100,8 +102,12 @@ been verified and a major-version removal is planned.
 
 - No NAT Gateways.
 - S3/DynamoDB gateway endpoints are shared and free of hourly endpoint cost.
-- Production Valkey is a size-one `t4g.micro` ASG without persistence. Treat
-  it as ephemeral cache/pub-sub and account for replacement outages.
+- Dragonfly is a size-one `t4g.nano` ASG without persistence. Treat it as
+  ephemeral cache/pub-sub and account for replacement outages. Its flags are
+  sized for 512 MiB of RAM; see README before changing `--maxmemory`,
+  `--proactor_threads` or `--dbnum`.
+- `lib/valkey-stack.ts` is no longer instantiated. Deleting the Valkey stack
+  in an environment is the prerequisite for deploying Dragonfly there.
 - The deployments bucket expires objects after 30 days.
 - The application-log archive bucket is retained and has no expiration; any
   lifecycle change requires a retention decision.

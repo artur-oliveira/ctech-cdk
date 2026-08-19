@@ -63,6 +63,10 @@ export function buildCloudWatchAgentConfig(props: CloudWatchAgentConfigProps): s
     metrics: {
       namespace: props.metricNamespace,
       append_dimensions: {InstanceId: '${aws:InstanceId}'},
+      // Also publish a dimension-less rollup. Without it every series carries an
+      // InstanceId that is unknown at synth time, so no CloudFormation alarm can
+      // ever match a metric coming off an ASG-managed host.
+      aggregation_dimensions: [[]],
       metrics_collected: metricsCollected,
     },
     logs: {
