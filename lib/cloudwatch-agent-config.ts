@@ -56,6 +56,8 @@ export function buildCloudWatchAgentConfig(props: CloudWatchAgentConfigProps): s
     }];
   }
 
+  // Compact rather than pretty-printed: this string is embedded verbatim in EC2
+  // user data, which is capped at 16 KB.
   return JSON.stringify({
     agent: {metrics_collection_interval: interval},
     metrics: {
@@ -75,5 +77,5 @@ export function buildCloudWatchAgentConfig(props: CloudWatchAgentConfigProps): s
         },
       },
     },
-  }, null, 2);
+  });
 }

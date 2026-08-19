@@ -5,7 +5,7 @@ export {
   GithubActionsDeployRolesProps,
   githubTrustPrincipal,
 } from './github-deploy-roles';
-export {PrivateIpv4Ec2Service, PrivateIpv4Ec2ServiceProps} from './private-ipv4-ec2-service';
+export {Ec2ScriptRunner, Ec2ScriptRunnerProps} from './ec2-script-runner';
 export {
   addCloudflareOriginCaCommands,
   addDualStackSsmAgentCommands,

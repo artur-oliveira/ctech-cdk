@@ -6,7 +6,8 @@ import {test} from 'node:test';
 import * as cdk from 'aws-cdk-lib';
 import {Match, Template} from 'aws-cdk-lib/assertions';
 import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
-import {SSM} from '../lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import {Ec2ScriptRunner, SSM} from '../lib';
 
 const ASSETS_DIR = path.join(__dirname, '..', 'assets', 'ec2');
 
@@ -175,4 +176,43 @@ test('Ec2ScriptsStack publishes the scripts under a content-hash prefix', () => 
   });
 
   assert.match(stack.version, /^[0-9a-f]{64}$/, 'version must be the asset content hash');
+});
+
+test('Ec2ScriptRunner emits a download-then-execute prelude, never a pipe to bash', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'RunnerFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+  });
+  const runner = new Ec2ScriptRunner(stack, 'Scripts', {environment: 'prod'});
+  const userData = ec2.UserData.forLinux();
+  runner.install(userData);
+  runner.run(userData, 'setup-swap.sh', '256');
+
+  const rendered = userData.render();
+  assert.match(rendered, /ctech_run\(\)/);
+  assert.match(rendered, /aws s3 cp/);
+  assert.doesNotMatch(rendered, /aws s3 cp [^\n]*\| *bash/);
+  assert.match(rendered, /ctech_run setup-swap\.sh '256'/);
+});
+
+test('Ec2ScriptRunner shell-quotes arguments', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'QuoteFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+  });
+  const runner = new Ec2ScriptRunner(stack, 'Scripts', {environment: 'dev'});
+  const userData = ec2.UserData.forLinux();
+  runner.run(userData, 'setup-ssm-env.sh', "FOO=/a/b'c");
+
+  assert.match(userData.render(), /'FOO=\/a\/b'\\''c'/);
+});
+
+test('Ec2ScriptRunner rejects a script name that is not a bare filename', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'RejectFixture');
+  const runner = new Ec2ScriptRunner(stack, 'Scripts', {environment: 'dev'});
+  assert.throws(
+    () => runner.run(ec2.UserData.forLinux(), '../../etc/passwd'),
+    /must be a bare script filename/,
+  );
 });

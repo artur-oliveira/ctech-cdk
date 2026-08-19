@@ -114,3 +114,16 @@ test('HaproxyEc2Service synthesizes ASG, dual-stack launch template and route', 
     Tier: 'Standard',
   });
 });
+
+test('buildCloudWatchAgentConfig emits compact JSON to conserve user data', () => {
+  const config = buildCloudWatchAgentConfig({
+    metricNamespace: 'CtechExample/prod/Host',
+    logFiles: [{
+      filePath: '/var/log/app/app.log',
+      logGroupName: '/ctech-example/prod/app',
+      logStreamName: '{instance_id}',
+    }],
+  });
+  assert.doesNotMatch(config, /\n/, 'config must be a single line');
+  assert.ok(JSON.parse(config));
+});
