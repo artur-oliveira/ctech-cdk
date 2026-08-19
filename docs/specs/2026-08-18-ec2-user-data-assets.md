@@ -196,8 +196,8 @@ repository, which owns its own instance profile, applies it.
 
 ```ts
 schedule?: {
-  disableCron: string;   // default '0 1 * * *'
-  enableCron: string;    // default '0 8 * * *'
+  disableCron: string;   // default '0 22 * * *'
+  enableCron: string;    // default '0 10 * * *'
   timeZone?: string;     // default 'America/Sao_Paulo'
 }
 ```
@@ -212,7 +212,7 @@ on each, so the pair is a no-op that only ever scales down, and it carries no
 `timeZone`, meaning the cron is UTC rather than BRT.
 
 Operational consequence, accepted by the decision to include production: every
-service and the shared Valkey are down from 01:00 to 08:00 BRT daily. Inbound
+service and the shared Valkey are down from 22:00 to 10:00 BRT daily (01:00–13:00 UTC). Inbound
 traffic in that window fails — ctech-billing webhooks, PIX callbacks, DF-e SEFAZ
 distribution polling, and any scheduled job. Excluding production later is one
 conditional at each call site.

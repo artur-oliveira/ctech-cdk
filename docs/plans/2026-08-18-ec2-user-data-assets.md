@@ -20,7 +20,7 @@
 - New SSM paths: `/ctech/{env}/ec2-scripts/bucket` and `/ctech/{env}/ec2-scripts/version`.
 - Bucket name: `${environment}-ctech-ec2-scripts`.
 - Instances need exactly one new IAM permission: `s3:GetObject` on `arn:aws:s3:::${env}-ctech-ec2-scripts/*`.
-- ASG schedule defaults: `disableCron: '0 1 * * *'`, `enableCron: '0 8 * * *'`, `timeZone: 'America/Sao_Paulo'`, applied to every environment including production.
+- ASG schedule defaults: `disableCron: '0 22 * * *'`, `enableCron: '0 10 * * *'`, `timeZone: 'America/Sao_Paulo'`, applied to every environment including production.
 - Existing `add*Commands` fragments in `lib/ec2-userdata-fragments.ts` stay exported and working until every repository has migrated. They are not deleted in this plan.
 - `npm test` in `ctech-cdk` runs `node --require ts-node/register --test test/*.test.ts`.
 - Commit messages use Conventional Commits. Never add a `Co-Authored-By` trailer.
@@ -1629,9 +1629,9 @@ git commit -m "feat(ec2): add Ec2ScriptRunner and compact the CloudWatch agent c
 
 ```ts
 export interface AsgScheduleProps {
-  /** UNIX cron, 5 fields. Default '0 1 * * *'. Scales min/max/desired to 0. */
+  /** UNIX cron, 5 fields. Default '0 22 * * *'. Scales min/max/desired to 0. */
   disableCron?: string;
-  /** UNIX cron, 5 fields. Default '0 8 * * *'. Restores configured capacity. */
+  /** UNIX cron, 5 fields. Default '0 10 * * *'. Restores configured capacity. */
   enableCron?: string;
   /** IANA zone. Default 'America/Sao_Paulo'. */
   timeZone?: string;
@@ -1642,7 +1642,7 @@ export interface AsgScheduleProps {
 
 **Why this replaces the uncommitted block:** `lib/valkey-stack.ts:279-297` currently registers `DefaultDisable` and `DefaultEnable` with the same `0 1 * * *` cron and sets `minCapacity`, `maxCapacity` and `desiredCapacity` to 0 on both. The pair only ever scales down, and with no `timeZone` the cron is interpreted as UTC rather than BRT.
 
-**Operational consequence, accepted in the spec:** this applies to production. Every service and the shared Valkey are down 01:00–08:00 BRT daily; inbound webhooks and scheduled jobs fail in that window.
+**Operational consequence, accepted in the spec:** this applies to production. Every service and the shared Valkey are down 22:00–10:00 BRT daily (01:00–13:00 UTC); inbound webhooks and scheduled jobs fail in that window.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1676,14 +1676,14 @@ test('HaproxyEc2Service schedules disable to zero and enable back to configured 
   const template = Template.fromStack(stack);
 
   template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
-    Recurrence: '0 1 * * *',
+    Recurrence: '0 22 * * *',
     TimeZone: 'America/Sao_Paulo',
     MinSize: 0,
     MaxSize: 0,
     DesiredCapacity: 0,
   });
   template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
-    Recurrence: '0 8 * * *',
+    Recurrence: '0 10 * * *',
     TimeZone: 'America/Sao_Paulo',
     MinSize: 1,
     MaxSize: 3,
@@ -1727,17 +1727,17 @@ In `ctech-cdk/lib/haproxy-ec2-service.ts`, add above `HaproxyEc2ServiceProps`:
 
 ```ts
 export interface AsgScheduleProps {
-  /** UNIX cron, 5 fields. Default '0 1 * * *'. */
+  /** UNIX cron, 5 fields. Default '0 22 * * *'. */
   disableCron?: string;
-  /** UNIX cron, 5 fields. Default '0 8 * * *'. */
+  /** UNIX cron, 5 fields. Default '0 10 * * *'. */
   enableCron?: string;
   /** IANA time zone. Default 'America/Sao_Paulo' — AWS defaults to UTC. */
   timeZone?: string;
 }
 
 export const DEFAULT_ASG_SCHEDULE = {
-  disableCron: '0 1 * * *',
-  enableCron: '0 8 * * *',
+  disableCron: '0 22 * * *',
+  enableCron: '0 10 * * *',
   timeZone: 'America/Sao_Paulo',
 } as const;
 

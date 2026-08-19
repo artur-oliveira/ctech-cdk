@@ -153,14 +153,14 @@ test('HaproxyEc2Service schedules disable to zero and enable back to configured 
   const template = Template.fromStack(stack);
 
   template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
-    Recurrence: '0 1 * * *',
+    Recurrence: '0 22 * * *',
     TimeZone: 'America/Sao_Paulo',
     MinSize: 0,
     MaxSize: 0,
     DesiredCapacity: 0,
   });
   template.hasResourceProperties('AWS::AutoScaling::ScheduledAction', {
-    Recurrence: '0 8 * * *',
+    Recurrence: '0 10 * * *',
     TimeZone: 'America/Sao_Paulo',
     MinSize: 1,
     MaxSize: 3,

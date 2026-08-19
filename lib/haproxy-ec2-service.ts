@@ -19,17 +19,17 @@ export interface HaproxyRouteRegistrationProps {
 }
 
 export interface AsgScheduleProps {
-  /** UNIX cron, 5 fields. Default '0 1 * * *'. */
+  /** UNIX cron, 5 fields. Default '0 22 * * *' (01:00 UTC). */
   disableCron?: string;
-  /** UNIX cron, 5 fields. Default '0 8 * * *'. */
+  /** UNIX cron, 5 fields. Default '0 10 * * *' (13:00 UTC). */
   enableCron?: string;
   /** IANA time zone. Default 'America/Sao_Paulo' — AWS defaults to UTC. */
   timeZone?: string;
 }
 
 export const DEFAULT_ASG_SCHEDULE = {
-  disableCron: '0 1 * * *',
-  enableCron: '0 8 * * *',
+  disableCron: '0 22 * * *',
+  enableCron: '0 10 * * *',
   timeZone: 'America/Sao_Paulo',
 } as const;
 
