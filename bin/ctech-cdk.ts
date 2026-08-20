@@ -7,7 +7,6 @@ import {S3Stack} from '../lib/s3-stack';
 import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
-import {DragonflyStack} from "../lib/dragonfly-stack";
 import {ValkeyStack} from "../lib/valkey-stack";
 
 const app = new cdk.App();
@@ -95,7 +94,8 @@ new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
   schedule: {
-    enableCron: '30 9 * * *'
+    enableCron: '50 11 * * *',
+    disableCron: '20 13 * * *'
   },
   description: `CTech Shared ValKey Cache - ${ENVIRONMENT}`,
 })
