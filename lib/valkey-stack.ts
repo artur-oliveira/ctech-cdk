@@ -315,20 +315,20 @@ export class ValkeyStack extends cdk.Stack {
     }
 
     // ── RAM monitoring alarm (informational for all environments) ─────────────
-    new cloudwatch.Alarm(this, 'ValkeyHighMemAlarm', {
-      alarmName: `${environment}-ctech-valkey-high-mem`,
-      alarmDescription: 'Valkey RAM > 80% - increase maxmemory or upgrade instance',
-      metric: new cloudwatch.Metric({
-        namespace: VALKEY_METRIC_NAMESPACE(environment),
-        metricName: 'mem_used_percent',
-        statistic: 'Average',
-        period: cdk.Duration.minutes(5),
-      }),
-      threshold: 80,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-      evaluationPeriods: 3,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
+    // new cloudwatch.Alarm(this, 'ValkeyHighMemAlarm', {
+    //   alarmName: `${environment}-ctech-valkey-high-mem`,
+    //   alarmDescription: 'Valkey RAM > 80% - increase maxmemory or upgrade instance',
+    //   metric: new cloudwatch.Metric({
+    //     namespace: VALKEY_METRIC_NAMESPACE(environment),
+    //     metricName: 'mem_used_percent',
+    //     statistic: 'Average',
+    //     period: cdk.Duration.minutes(5),
+    //   }),
+    //   threshold: 80,
+    //   comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+    //   evaluationPeriods: 3,
+    //   treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    // });
 
     // ── SSM placeholder (overwritten by instance at first boot) ──────────────
     new ssm.StringParameter(this, 'ValkeyUrlPlaceholder', {
