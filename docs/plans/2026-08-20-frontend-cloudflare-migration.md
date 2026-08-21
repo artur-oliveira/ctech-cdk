@@ -470,7 +470,7 @@ that completes with no stub. Verified in `out/`: the reciprocal hreflang cluster
 bundle, and — with `NEXT_PUBLIC_WS_URL` set as the caller sets it — exactly one `wss://wallet-api.aoctech.app`
 literal, which is what makes the generated `connect-src` allow the socket.
 
-### 2e — `ctech-poker` avatars (0.5–1 day) — code done, two out-of-band steps left
+### 2e — `ctech-poker` avatars — done 2026-08-20
 
 The caller passes `csp-overrides: img-src 'self' data: $API_ORIGIN`. `$API_ORIGIN` is a new placeholder in the reusable
 workflow that expands to the environment's `NEXT_PUBLIC_API_URL` origin — added because `csp-overrides` is one input
@@ -571,6 +571,8 @@ frame-src https://challenges.cloudflare.com
 
 ## Phase 3 — Cutover (prod only)
 
+**Done 2026-08-20 — all five services are on Workers.**
+
 **Amended 2026-08-20 on the owner's instruction: no environment currently carries real traffic, so the cutover is done
 directly in prod and the dev → stage → prod ladder is dropped.** Dev and stage Workers still get created whenever those
 branches are pushed; they are simply not gates any more. Rollback is unchanged and still costs one DNS record.
@@ -639,6 +641,59 @@ posture is correct for every service, not only account.
 - `ctech-wallet` should get its `hreflang` links first. Nothing breaks without them — `/`, `/en` and `/pt-BR` all render
   — but `/` stops redirecting by locale the moment the Function is out of the path, and the canonical links are what
   replace it.
+
+### Cut over 2026-08-20 — `ctech-poker`, and the window 2e opened
+
+Same mechanism as the other four: a Worker Route on `poker.aoctech.app/*`, no DNS change, rollback by dropping the
+route. `prod-workers-dev: false` set in the caller; `ctech-poker-prod.aoctech.workers.dev` now 404s. All five services
+are on Workers.
+
+2e had already shipped when this ran — `GET /v1.0/avatars/{id}/{n}.jpg` returned `200 image/jpeg` with
+`cache-control: public, max-age=31536000, immutable` and `cf-cache-status: HIT` — so the blocker recorded above was
+already gone.
+
+**2e left poker broken in prod, and only the cutover could fix it.** Repointing `AVATAR_BASE_URL` at the API host moved
+avatars to a *different origin*, but `poker.aoctech.app` was still CloudFront, still serving the CDK
+`ResponseHeadersPolicy` (`lib/nextjs-static-frontend.ts:115`) whose `img-src` is `'self' data:`. Every avatar was
+blocked by CSP:
+
+> Loading the image 'https://poker-api.aoctech.app/v1.0/avatars/…' violates the following Content Security Policy
+> directive: "img-src 'self' data:". The action has been blocked.
+
+The correct policy already existed — `csp-overrides: img-src 'self' data: $API_ORIGIN`
+(`ctech-poker/.github/workflows/frontend.yml:69`) — but it is generated into `out/_headers` by the Worker pipeline, so
+it only reached the browser on the Worker. Fixing it on CloudFront would have meant a `cdk deploy` of a stack Phase 4
+deletes.
+
+**The lesson for any future move of a static path onto an API host: the CSP that permits the new origin and the change
+that starts using it must land in the same deploy.** Here they could not, because they live on opposite sides of the
+migration — which is an argument for cutting over *before* repointing, not after.
+
+### Gates that need the API, run 2026-08-20 with the ASG up outside its window
+
+- **Preflight**: `OPTIONS /v1.0/health-check` with `Origin`, `Access-Control-Request-Method` and
+  `Access-Control-Request-Headers` returns `204` on `poker-api` and `wallet-api`, with
+  `access-control-allow-origin` echoing the app host, `access-control-allow-credentials: true` and
+  `access-control-max-age: 3600`.
+- **WebSocket**: the upgrade handshake with the app `Origin` returns `101` on `poker-api` and `wallet-api`.
+  It must be sent over HTTP/1.1 — `curl` defaults to HTTP/2 against Cloudflare, which has no `Upgrade:` mechanism, and
+  the attempt surfaces as a misleading `500`. `dfe` was verified separately and is fine; the `503` seen here was only
+  its ASG already being back at zero.
+- **Not covered by any of this:** the browser login round trip. It is the one gate that cannot be curled.
+
+A latency complaint against poker's CORS did not reproduce. Ten requests over one connection: poker `0.20–0.34s`,
+wallet `0.35–0.52s`. The CORS configuration is identical in both (`ctech-poker/api/internal/app/app.go:146`,
+`ctech-wallet/api/internal/app/app.go:268`) down to `MaxAge: 3600`.
+
+**Rejected: moving the access token into a cookie to drop `Authorization` and "avoid CORS".** It does not avoid CORS —
+cross-origin still requires `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials`, plus
+`withCredentials` on every call. It drops the *preflight*, and only for GET: poker's mutations send
+`Content-Type: application/json` and `Idempotency-Key`, neither of which is a CORS-safelisted header, so they preflight
+regardless. The gain is one `OPTIONS` per endpoint per hour, already bounded by `MaxAge`. The cost is losing CSRF
+immunity — a bearer header cannot be forged by another origin, whereas a cookie is ambient authority, and
+`SameSite=Lax` does not help here because the app and the API are *same-site*, so any `aoctech.app` subdomain could
+forge an authenticated request. It would also end the in-memory-only access token (`ui/src/lib/api/client.ts:139`).
+If preflight volume ever does matter, raise `MaxAge` to `7200` (Chrome's ceiling) and change nothing else.
 
 **Rollback:** point the DNS record back at the CloudFront distribution, which is still deployed and still holds the last
 S3 state. No apply, no rebuild. For poker's avatars, the previous `AVATAR_BASE_URL` value.
