@@ -1,0 +1,276 @@
+name: Frontend (Cloudflare)
+
+# Reusable workflow. Owns everything the five per-repo frontend.yml files used to
+# duplicate: environment resolution, build, the generated _headers and
+# wrangler.jsonc, the export guards, and the wrangler deploy.
+#
+# Callers keep only what is actually theirs: which NEXT_PUBLIC_* values each
+# environment builds with, and the handful of CSP sources that are not derived
+# from those values.
+#
+# The Content-Security-Policy connect-src is DERIVED from the selected
+# build-env block rather than passed in. Every origin the browser talks to is
+# already a NEXT_PUBLIC_*_URL, so deriving it makes a CSP that disagrees with
+# the build impossible to express. See docs/plans/2026-08-20-frontend-cloudflare-migration.md.
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Worker name prefix, e.g. ctech-dfe. Deploys as <service>-<env>.'
+        required: true
+        type: string
+      working-directory:
+        description: 'Directory holding package.json and the export.'
+        type: string
+        default: ui
+      node-version:
+        type: string
+        default: '24'
+      build-command:
+        type: string
+        default: npm run build
+      test-command:
+        description: 'Empty string skips tests.'
+        type: string
+        default: npm run test
+      build-env-dev:
+        description: 'KEY=value per line, exported before the build on the dev branch.'
+        required: true
+        type: string
+      build-env-stage:
+        required: true
+        type: string
+      build-env-prod:
+        required: true
+        type: string
+      extra-connect-src:
+        description: >
+          Space-separated CSP source expressions for origins the app calls that are
+          not one of its NEXT_PUBLIC_* URLs, e.g. https://viacep.com.br.
+        type: string
+        default: ''
+      csp-overrides:
+        description: >
+          One directive per line, replacing the default of the same name or adding a
+          new one, e.g. "img-src 'self' data: blob: https://bucket.example". Cannot
+          override connect-src, which is derived.
+        type: string
+        default: ''
+      permissions-policy:
+        description: 'Value for the Permissions-Policy header. Empty means no header.'
+        type: string
+        default: ''
+      wrangler-version:
+        type: string
+        default: '4.125.0'
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve environment
+        id: env
+        run: |
+          case "${{ github.ref_name }}" in
+            main)    name=prod  ;;
+            staging) name=stage ;;
+            *)       name=dev   ;;
+          esac
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "worker=${{ inputs.service }}-$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        if: inputs.test-command != ''
+        run: ${{ inputs.test-command }}
+
+      # Written to a file rather than straight into GITHUB_ENV so the same block
+      # can be re-read when deriving connect-src, and so a stray line is a parse
+      # error here instead of a silently missing variable at build time.
+      - name: Select build environment
+        env:
+          BUILD_ENV_DEV: ${{ inputs.build-env-dev }}
+          BUILD_ENV_STAGE: ${{ inputs.build-env-stage }}
+          BUILD_ENV_PROD: ${{ inputs.build-env-prod }}
+        run: |
+          case "${{ steps.env.outputs.name }}" in
+            prod)  printf '%s\n' "$BUILD_ENV_PROD"  > build.env ;;
+            stage) printf '%s\n' "$BUILD_ENV_STAGE" > build.env ;;
+            dev)   printf '%s\n' "$BUILD_ENV_DEV"   > build.env ;;
+          esac
+          while IFS= read -r line; do
+            [ -z "${line// }" ] && continue
+            case "$line" in
+              \#*) continue ;;
+              *=*) echo "$line" >> "$GITHUB_ENV" ;;
+              *) echo "::error::build-env line is not KEY=value: $line"; exit 1 ;;
+            esac
+          done < build.env
+          echo "Build environment for ${{ steps.env.outputs.name }}:"
+          cut -d= -f1 build.env | sed '/^$/d;s/^/  /'
+
+      - name: Build (static export)
+        run: ${{ inputs.build-command }}
+
+      - name: Guard the export
+        run: |
+          [ -d out ] || { echo "::error::out/ does not exist — is output: 'export' still set?"; exit 1; }
+          files=$(find out -type f | wc -l)
+          html=$(find out -name '*.html' | wc -l)
+          [ "$html" -gt 0 ] || { echo "::error::out/ contains no HTML — refusing to deploy an empty export"; exit 1; }
+          # Free-plan ceilings, confirmed 2026-08-20. Deploying past either fails
+          # at wrangler with a less obvious message.
+          [ "$files" -le 20000 ] || { echo "::error::$files files exceeds the 20,000 per-deployment limit"; exit 1; }
+          big=$(find out -type f -size +25M -printf '%p ')
+          [ -z "$big" ] || { echo "::error::files over 25 MiB: $big"; exit 1; }
+          echo "out/: $files files, $html HTML pages"
+
+      # Ports the ResponseHeadersPolicy that createNextjsStaticFrontend used to
+      # build in CloudFront, plus the immutable rule that the two-pass
+      # `aws s3 sync` expressed. HTML needs no rule: the platform default is
+      # already public, max-age=0, must-revalidate with an ETag, and Cloudflare
+      # caches HTML inside its own network regardless of that browser value.
+      - name: Generate _headers
+        env:
+          EXTRA_CONNECT_SRC: ${{ inputs.extra-connect-src }}
+          CSP_OVERRIDES: ${{ inputs.csp-overrides }}
+          PERMISSIONS_POLICY: ${{ inputs.permissions-policy }}
+        run: |
+          python3 - <<'PY'
+          import os, re, collections
+
+          origins = []
+          for line in open('build.env'):
+              line = line.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              value = line.split('=', 1)[1].strip()
+              for match in re.findall(r'(?:https|wss)://[^\s,;\'"]+', value):
+                  origin = re.sub(r'(://[^/]+).*$', r'\1', match)
+                  if origin not in origins:
+                      origins.append(origin)
+
+          connect = ["'self'"] + origins + os.environ['EXTRA_CONNECT_SRC'].split()
+
+          csp = collections.OrderedDict([
+              ('default-src', "'self'"),
+              ('base-uri', "'self'"),
+              ('object-src', "'none'"),
+              ('frame-ancestors', "'none'"),
+              ('img-src', "'self' data:"),
+              ('style-src', "'self' 'unsafe-inline'"),
+              ('script-src', "'self' 'unsafe-inline'"),
+              ('connect-src', ' '.join(connect)),
+          ])
+          for line in os.environ['CSP_OVERRIDES'].splitlines():
+              line = line.strip()
+              if not line:
+                  continue
+              name, _, value = line.partition(' ')
+              if name == 'connect-src':
+                  raise SystemExit('::error::connect-src is derived from build-env '
+                                   'and cannot be overridden; use extra-connect-src')
+              csp[name] = value.strip()
+
+          rules = [
+              "  X-Content-Type-Options: nosniff",
+              "  X-Frame-Options: DENY",
+              "  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload",
+              "  Referrer-Policy: strict-origin-when-cross-origin",
+              "  Content-Security-Policy: " + '; '.join(f'{k} {v}' for k, v in csp.items()),
+          ]
+          if os.environ['PERMISSIONS_POLICY']:
+              rules.append("  Permissions-Policy: " + os.environ['PERMISSIONS_POLICY'])
+
+          for rule in rules:
+              if len(rule) > 2000:
+                  raise SystemExit(f'::error::header line exceeds the 2,000 character '
+                                   f'_headers limit: {rule[:80]}...')
+
+          with open('out/_headers', 'w') as f:
+              f.write('# Generated by ctech-cdk/.github/workflows/frontend-cloudflare.yml\n')
+              f.write('/*\n' + '\n'.join(rules) + '\n\n')
+              f.write('/_next/static/*\n')
+              f.write('  Cache-Control: public, max-age=31536000, immutable\n')
+          PY
+          echo "--- out/_headers"
+          cat out/_headers
+
+      - name: Verify the generated CSP
+        run: |
+          csp=$(grep -m1 'Content-Security-Policy:' out/_headers)
+          for required in "default-src 'self'" "frame-ancestors 'none'" "object-src 'none'"; do
+            case "$csp" in
+              *"$required"*) ;;
+              *) echo "::error::generated CSP is missing $required"; exit 1 ;;
+            esac
+          done
+          # An app that builds against an API it may not call is a CSP failure
+          # waiting for the first authenticated request.
+          while IFS= read -r host; do
+            case "$csp" in
+              *"$host"*) ;;
+              *) echo "::error::build-env references $host but connect-src does not allow it"; exit 1 ;;
+            esac
+          done < <(grep -oE '(https|wss)://[^/[:space:],;"]+' build.env | sort -u)
+
+      # html_handling replaces the CloudFront Function that read the KeyValueStore
+      # route manifest; not_found_handling replaces the /404.html fallback it did
+      # in the same breath. Generated rather than committed per repo so all 15
+      # deployments cannot drift apart.
+      - name: Generate wrangler.jsonc
+        run: |
+          cat > wrangler.jsonc <<JSON
+          {
+            "name": "${{ steps.env.outputs.worker }}",
+            "compatibility_date": "2026-08-20",
+            "assets": {
+              "directory": "./out",
+              "html_handling": "auto-trailing-slash",
+              "not_found_handling": "404-page"
+            },
+            "observability": {"enabled": true}
+          }
+          JSON
+          cat wrangler.jsonc
+
+      - name: Deploy
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@${{ inputs.wrangler-version }} deploy 2>&1 | tee deploy.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.service }} → ${{ steps.env.outputs.worker }}"
+            echo
+            echo "- Environment: \`${{ steps.env.outputs.name }}\` (branch \`${{ github.ref_name }}\`)"
+            echo "- Files: $(find out -type f 2>/dev/null | wc -l)"
+            url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log 2>/dev/null | tail -1)
+            [ -n "$url" ] && echo "- Worker URL: $url"
+          } >> "$GITHUB_STEP_SUMMARY"

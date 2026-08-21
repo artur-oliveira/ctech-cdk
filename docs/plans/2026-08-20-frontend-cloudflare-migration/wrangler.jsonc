@@ -1,0 +1,16 @@
+// Phase 0 spike only. Phase 2 commits this as ctech-dfe/ui/wrangler.jsonc with
+// the real name supplied by `wrangler deploy --name ctech-dfe-<env>` in CI.
+{
+  "name": "ctech-dfe-spike",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": "./out",
+    // Replaces the CloudFront Function + KeyValueStore route manifest entirely:
+    // foo.html serves at /foo, foo/index.html serves at /foo/.
+    "html_handling": "auto-trailing-slash",
+    // Serves the export's own 404.html with a real 404 status. Without this the
+    // platform default is a null-body 404, which is the gate this spike checks.
+    "not_found_handling": "404-page"
+  },
+  "observability": {"enabled": true}
+}
