@@ -356,7 +356,7 @@ them means a rollback during the soak window can also ship a code change, not ju
 They go in Phase 4 with the distribution. `deploy.yml`'s frontend job loses `id-token: write` (no AWS role any more) and
 gains `secrets: inherit` so `CLOUDFLARE_*` reaches the reusable workflow two hops down.
 
-### 2a — `ctech-account` (0.5 day)
+### 2a — `ctech-account` — caller done 2026-08-20
 
 - [ ] Replace `.github/workflows/frontend.yml` with a caller passing `connect-src` for `accounts-api[-env]`,
   `viacep.com.br` and the KYC document bucket hostnames — the exact list currently produced by
@@ -367,7 +367,7 @@ gains `secrets: inherit` so `CLOUDFLARE_*` reaches the reusable workflow two hop
   so a Cloudflare-served app on the same registrable domain is unaffected. Test the full login round trip on `dev`
   before touching stage.
 
-### 2b — `ctech-billing` (0.5 day)
+### 2b — `ctech-billing` — caller done 2026-08-20
 
 - [ ] Replace `frontend.yml` with a caller. `NEXT_PUBLIC_API_URL` is already the API hostname and the CORS posture is
   already in `terraform/billing/locals.tf`.
@@ -403,14 +403,25 @@ gains `secrets: inherit` so `CLOUDFLARE_*` reaches the reusable workflow two hop
 after the first deploy. That is the Phase 1 verification too — this repo is where the reusable workflow gets its first
 real run.
 
-### 2d — `ctech-wallet` (0.5 day)
+### 2d — `ctech-wallet` — caller done 2026-08-20, UI work outstanding
 
 - [ ] Replace `frontend.yml` with a caller.
 - [ ] Add `hreflang` alternates for `/en` and `/pt-BR` in `ui/src/app/layout.tsx`.
 - [ ] Confirm `/`, `/en` and `/pt-BR` all render the correct language with the edge redirect gone; keep
   `ui/src/app/localized-routes.test.mjs` and `homepage.test.mjs` green or rewrite them to assert the new contract.
 
-### 2e — `ctech-poker` avatars (0.5–1 day)
+### 2e — `ctech-poker` avatars (0.5–1 day) — caller done, handler outstanding
+
+The caller passes `csp-overrides: img-src 'self' data: $API_ORIGIN`. `$API_ORIGIN` is a new placeholder in the reusable
+workflow that expands to the environment's `NEXT_PUBLIC_API_URL` origin — added because `csp-overrides` is one input
+while the API host differs per environment, and hardcoding the prod host would have silently broken avatars on dev and
+stage.
+
+Also found while writing that caller: **Turnstile's script and iframe were never allowed by the CSP.**
+`cdk/bin/poker.ts:137` passes `challenges.cloudflare.com` through `extraConnectSrc`, which only reaches `connect-src`.
+The widget also needs it in `script-src`, and its iframe needs a `frame-src` — which fell back to `default-src 'self'`.
+The caller now grants both. Pre-existing, not caused by this migration.
+
 
 - [ ] Add a public `GET /v1.0/avatars/*` handler backed by `avatar.Service`, streaming from the existing bucket.
 - [ ] **Security:** validate the key against a strict pattern and force the `av/` prefix server-side. `up/` is the
@@ -431,30 +442,37 @@ real run.
 
 ---
 
-## Phase 3 — Cutover (1 day, spread across soak windows)
+## Phase 3 — Cutover (prod only)
 
-Per service, per environment, in the order dev → stage → prod. Never two environments of the same service on the same
-day.
+**Amended 2026-08-20 on the owner's instruction: no environment currently carries real traffic, so the cutover is done
+directly in prod and the dev → stage → prod ladder is dropped.** Dev and stage Workers still get created whenever those
+branches are pushed; they are simply not gates any more. Rollback is unchanged and still costs one DNS record.
 
-- [ ] Deploy the Worker through CI. Verify the **static** gates on its `workers.dev` URL first — no DNS involved.
-  `verify.sh <url> <expected connect-src origins…>` covers them. The auth, CORS and WebSocket gates cannot pass there,
-  because the page origin is not in `CORS_ALLOWED_ORIGINS`; they wait for the custom domain below.
-- [ ] Attach the custom domain and let the certificate issue while the DNS record still points at CloudFront.
-- [ ] Switch the DNS record to the Worker. Keep the proxy on.
-- [ ] Verify, in this order: HTML `200` with the expected `content-security-policy`; a nested pretty URL; an unknown
-  path returning `404`; login round trip and cookie set; one authenticated API call with its preflight. Run the Phase 0
-  `verify.sh` from the plan's kit directory against the real hostname — it covers the first three mechanically.
-- [ ] Record `curl -w '%{time_total}'` before and after the DNS switch. This, not `cf-cache-status`, is the evidence
-  that the extra hop is gone; the header is documented as probabilistic on static assets.
-- [ ] Poker only: an avatar loads from the API hostname and returns the immutable `Cache-Control` on the second
-  request.
-- [ ] Prod only, once the custom domain serves traffic: set `prod-workers-dev: false` in that repo's caller and
-  redeploy, so `<service>-prod.workers.dev` stops being a second origin outside the zone.
-- [ ] Soak: dev 1 day, stage 2 days, prod 1 week before its teardown is allowed.
+Per service:
 
-**Rollback:** point the DNS record back at the CloudFront distribution, which is still deployed and still synced with
-the last S3 state. No apply, no rebuild. Rollback for the poker avatar path is the previous `avatar-base-url` value plus
-an instance refresh.
+- [ ] Deploy the prod Worker through CI (push to `main`).
+- [ ] Run the static gates on the `workers.dev` URL:
+  `verify.sh https://ctech-<service>-prod.aoctech.workers.dev <expected connect-src origins…>`.
+- [ ] Attach the custom domain and let the certificate issue while DNS still points at CloudFront.
+- [ ] Switch the DNS record to the Worker, proxy on.
+- [ ] Now run the gates that need the real origin: login round trip and cookie, one authenticated request with its
+  preflight, and — for `dfe` and `poker` — the WebSocket. These cannot pass on `workers.dev`, because the page origin is
+  not in `CORS_ALLOWED_ORIGINS`.
+- [ ] Record `curl -w '%{time_total}'` before and after. This, not `cf-cache-status`, is the evidence that the extra hop
+  is gone.
+- [ ] Set `prod-workers-dev: false` in that repo's caller and redeploy, so `<service>-prod.workers.dev` stops being a
+  second public origin outside the zone.
+
+**Order matters for two services:**
+
+- `ctech-poker` **cannot** cut over until 2e ships. The moment DNS points at the Worker, the `/avatars/*` CloudFront
+  behaviour is out of the request path, and avatars 404 until the API serves them and `AVATAR_BASE_URL` is repointed.
+- `ctech-wallet` should get its `hreflang` links first. Nothing breaks without them — `/`, `/en` and `/pt-BR` all render
+  — but `/` stops redirecting by locale the moment the Function is out of the path, and the canonical links are what
+  replace it.
+
+**Rollback:** point the DNS record back at the CloudFront distribution, which is still deployed and still holds the last
+S3 state. No apply, no rebuild. For poker's avatars, the previous `AVATAR_BASE_URL` value.
 
 ---
 
