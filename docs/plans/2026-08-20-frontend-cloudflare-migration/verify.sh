@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# Phase 0 gates. Usage: ./verify.sh https://ctech-dfe-dev.<subdomain>.workers.dev
+# Static gates: Phase 0 on a spike, Phase 3 on each service's prod Worker.
+# Usage: ./verify.sh <base-url> [expected-connect-src-origin ...]
+#
+# ROUTES overrides the paths probed for pretty URLs, which are per service —
+# the defaults below are dfe's. `/` is always included. The second path is also
+# the one the trailing-slash check uses, so name a real nested route:
+#   ROUTES='/ /login /gambling/activate' ./verify.sh https://…workers.dev …
+#
+# Every gate here is answerable by the edge alone. The login round trip, the
+# preflight and the WebSocket need the real origin in CORS_ALLOWED_ORIGINS and a
+# running API, so they are not in this script — see Phase 3 in the plan.
 set -uo pipefail
 BASE="${1:?usage: verify.sh <base-url> [expected-connect-src-origin ...]}"
 shift
 EXPECTED_ORIGINS=("$@")
+read -ra ROUTE_LIST <<<"${ROUTES:-/ /dashboard /guide/nfe /nfe/emit}"
+NESTED="${ROUTE_LIST[1]:-/}"
 fail=0
 ok()   { printf '  PASS  %s\n' "$1"; }
 bad()  { printf '  FAIL  %s\n' "$1"; fail=1; }
@@ -14,19 +26,19 @@ hdr()  { curl -sSD - -o /dev/null "$1" | tr -d '\r' | grep -i "^$2:" | cut -d' '
 echo "== pretty URLs (no route manifest)"
 # Real routes from `find out -name '*.html'`. Next exports dashboard.html, not
 # dashboard/index.html, so html_handling=auto-trailing-slash serves them bare.
-for p in / /dashboard /guide/nfe /nfe/emit; do
+for p in "${ROUTE_LIST[@]}"; do
   c=$(code "$BASE$p")
   [ "$c" = 200 ] && ok "$p -> 200" || bad "$p -> $c (expected 200)"
 done
 # A trailing slash on a bare .html asset is expected to 308 to the bare form.
-raw=$(code "$BASE/dashboard/")
-final=$(curl -sSL -o /dev/null -w '%{http_code}' "$BASE/dashboard/")
+raw=$(code "$BASE$NESTED/")
+final=$(curl -sSL -o /dev/null -w '%{http_code}' "$BASE$NESTED/")
 # Cloudflare normalises the trailing slash with a 307, not a 308 or 301.
 case "$raw" in
-  200|30[1278]) ok "/dashboard/ -> $raw, follows to $final";;
-  *) bad "/dashboard/ -> $raw (expected 200 or a 3xx)";;
+  200|30[1278]) ok "$NESTED/ -> $raw, follows to $final";;
+  *) bad "$NESTED/ -> $raw (expected 200 or a 3xx)";;
 esac
-[ "$final" = 200 ] || bad "/dashboard/ ends at $final after redirects"
+[ "$final" = 200 ] || bad "$NESTED/ ends at $final after redirects"
 
 echo "== 404 must be a real 404, not a 200"
 c=$(code "$BASE/definitely-not-a-route-$$")

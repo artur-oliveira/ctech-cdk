@@ -75,6 +75,16 @@ on:
         type: string
         default: '4.125.0'
     secrets:
+      # Scope: **Account · Workers Scripts · Edit**, on the CTech account only. That is
+      # everything `wrangler deploy` needs and nothing more — the token cannot read DNS,
+      # cannot touch zones, and cannot reach any other Cloudflare account. Attaching a
+      # custom domain to a Worker is deliberately NOT done here: it is a one-time manual
+      # step per service (Phase 3), so the deploy token never needs zone rights.
+      #
+      # It is one org-level secret shared by all five callers, because it grants exactly
+      # one capability and five copies would be five rotations. Rotate it whenever
+      # someone with repository access leaves, and otherwise at most yearly — a rotation
+      # is a single secret update, but every caller breaks until it lands.
       CLOUDFLARE_API_TOKEN:
         required: true
       CLOUDFLARE_ACCOUNT_ID:

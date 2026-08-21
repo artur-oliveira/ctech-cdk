@@ -403,14 +403,74 @@ gains `secrets: inherit` so `CLOUDFLARE_*` reaches the reusable workflow two hop
 after the first deploy. That is the Phase 1 verification too — this repo is where the reusable workflow gets its first
 real run.
 
-### 2d — `ctech-wallet` — caller done 2026-08-20, UI work outstanding
+### 2d — `ctech-wallet` — code done 2026-08-20, **blocked on a pre-existing broken build**
 
-- [ ] Replace `frontend.yml` with a caller.
-- [ ] Add `hreflang` alternates for `/en` and `/pt-BR` in `ui/src/app/layout.tsx`.
-- [ ] Confirm `/`, `/en` and `/pt-BR` all render the correct language with the edge redirect gone; keep
-  `ui/src/app/localized-routes.test.mjs` and `homepage.test.mjs` green or rewrite them to assert the new contract.
+- [x] Replace `frontend.yml` with a caller.
+- [x] hreflang alternates. Not in `ui/src/app/layout.tsx` as this plan originally said — **that placement is wrong.**
+  Next inherits metadata down the tree, so a `canonical: '/'` in the root layout would also claim to be the canonical
+  of `/dashboard`, `/login`, `/callback` and `/gambling/*`, none of which declare metadata of their own. `/en` and
+  `/pt-BR` already had correct per-page alternates via `lib/localized-metadata.ts`; the actual hole was `/`, which both
+  of them name as `x-default` while naming nobody back — a one-way annotation a crawler discards. It only mattered once
+  the CloudFront locale redirect went away and `/` became a served page. Fixed with `ROOT_ALTERNATES` on the root
+  **page**, which required splitting the markup into `ui/src/components/home.tsx`: a page that exports `metadata`
+  cannot be a client component. `/en` and `/pt-BR` keep re-exporting the same component, so there is one homepage.
+- [x] `images: {unoptimized: true}` added to `ui/next.config.ts`. **Not cosmetic** — the homepage uses `next/image`,
+  the default loader needs a server, and `output: 'export'` has none, so the export failed outright without it.
+- [x] Confirmed against a real static export: `/`, `/en`, `/pt-BR` each prerender the right language
+  (`Seu saldo CTech` / `Your CTech balance` / `Seu saldo CTech`), the three-way hreflang cluster is reciprocal in all
+  three, and `out/dashboard.html` correctly carries no canonical and no alternates. `<html lang>` stays `pt-BR` in the
+  static HTML on `/en` and is corrected on hydration by `StaticLocaleBoundary`, which also wraps the subtree in
+  `<div lang="en">`; a nested layout cannot render `<html>`, so this is the only available fix and it predates the
+  migration.
+- [x] Tests: `homepage.test.mjs` and `ui-polish.test.mjs` repointed at `components/home.tsx`; new assertions in
+  `homepage.test.mjs` and `localized-routes.test.mjs` for the root alternates. 45/45 node tests pass, `eslint` clean.
+- [x] **The `wss://` CSP trap again, third repo out of three that has a socket.** `useWalletRealtime.ts` derived the
+  socket origin from `NEXT_PUBLIC_API_URL` at runtime, so no `wss://` literal existed in the build environment for the
+  generator to find. `connect-src` is scheme-exact, so **every wallet WebSocket would have been blocked the moment DNS
+  moved.** Invisible under CloudFront because the socket was same-origin and covered by `'self'`. Fixed the same way as
+  dfe and poker: explicit `NEXT_PUBLIC_WS_URL` per environment in the caller, read rather than derived, with the
+  `NEXT_PUBLIC_API_URL` fallback kept for local development. Verified the generated prod `connect-src` is
+  `'self' https://wallet-api.aoctech.app wss://wallet-api.aoctech.app https://accounts-api.aoctech.app`.
+  `ctech-account` and `ctech-billing` have no WebSocket, so all three affected repos are now fixed.
+- [x] Docs: `ui/CLAUDE.md`, `ui/README.md` and `ui/AGENTS.md` all asserted API access was **same-origin** and carried a
+  rule reading "Never call the API cross-origin — keep `/v1.0/*` same-origin so CORS never applies." Directly contrary
+  to this migration, and loaded into every future session in that repo. Replaced with the cross-origin reality, the
+  `NEXT_PUBLIC_WS_URL` contract, and a rule that any new origin must appear as a literal in the caller's `build-env-*`.
 
-### 2e — `ctech-poker` avatars (0.5–1 day) — caller done, handler outstanding
+### 2d.1 — `ctech-wallet` broken build, found by 2d and fixed 2026-08-20
+
+`ctech-wallet/ui` **did not build at all** on `main`, migration or no migration: `src/lib/mock.ts:21` imported
+`@/lib/utils/fee`, which does not exist — a hard module-resolution failure, so `next build` died before
+type-checking, and `src/app/dashboard/page.tsx` read `w.fee` on a `Withdrawal` type with no such field. Introduced by
+commit `406d432`. Wallet could deploy to neither Cloudflare nor CloudFront.
+
+The repo's own `docs/specs/2026-08-16-withdrawal-fee-removal.md` (status: approved) settles it: "CTech never charges a
+withdrawal fee… new code neither reads nor writes them." The Go API had already complied — no `FeeBps`/`FeeMin`/
+`FeeMax`, no `json:"fee"`, no `fee` in the ledger entry-type constants. The UI was the leftover. So the fix is
+deletion, not restoration:
+
+- Dead code removed: the `withdrawalFee` call and `fee` ledger entry in `src/lib/mock.ts`; `fee: w.fee` and the two
+  receipt rows (`confirm.fee`, `confirm.total` on `amount + fee`) in `dashboard/page.tsx` — with no fee the total
+  equals the amount the receipt already shows; `fee?: number` and its validation branch in
+  `lib/utils/transaction-status.ts`; the unreachable `item.fee != null` block in `transaction-status-list.tsx`; the
+  test fixture's `fee: 100`. Old localStorage history still parses — `parseTransactionHistory` ignores unknown keys.
+- **Copy that told users about a fee that does not exist**, in both locales: `confirm.fee`, `transactions.fee` and
+  `ledger.type.fee` deleted; `confirm.withdraw.description` ("Review the amount and fee"),
+  `transactions.guidance.processing` ("the amount and fee are returned") and `dialog.error.overWithdrawable`
+  ("Including the fee, the maximum available to withdraw is X" — `effectiveMax` is just the balance, no fee
+  subtracted) reworded. The four remaining "no fee" strings are about `real ↔ game` transfers and stay true.
+- Docs corrected where they still asserted a fee or named deleted files: the root `CLAUDE.md`/`AGENTS.md` money-math
+  paragraph and their "Fee calculation" test-table row, root `README.md`, `rpc-contract/README.md`, the B18 rows in
+  `api/CLAUDE.md`/`api/AGENTS.md`/`api/ENDPOINTS.md`, and `ui/README.md`/`ui/AGENTS.md` — all four of the last group
+  pointed at `ui/src/lib/utils/fee.ts` and `api/internal/domain/wallet/fee.go`, neither of which exists. Dated specs
+  and plans from before 2026-08-16 are left as historical record; the removal spec already says it supersedes them.
+
+**Now green:** `npx tsc --noEmit` clean, `eslint` clean, 45/45 node tests, and a real `NODE_ENV=production next build`
+that completes with no stub. Verified in `out/`: the reciprocal hreflang cluster, no fee string anywhere in the
+bundle, and — with `NEXT_PUBLIC_WS_URL` set as the caller sets it — exactly one `wss://wallet-api.aoctech.app`
+literal, which is what makes the generated `connect-src` allow the socket.
+
+### 2e — `ctech-poker` avatars (0.5–1 day) — code done, two out-of-band steps left
 
 The caller passes `csp-overrides: img-src 'self' data: $API_ORIGIN`. `$API_ORIGIN` is a new placeholder in the reusable
 workflow that expands to the environment's `NEXT_PUBLIC_API_URL` origin — added because `csp-overrides` is one input
@@ -422,23 +482,90 @@ Also found while writing that caller: **Turnstile's script and iframe were never
 The widget also needs it in `script-src`, and its iframe needs a `frame-src` — which fell back to `default-src 'self'`.
 The caller now grants both. Pre-existing, not caused by this migration.
 
+And a second CSP gap the caller had to close: the avatar **upload** is the one request the app makes to a host that is
+not the API — `uploadAvatar()` POSTs the presigned form straight to the bucket (`ui/src/lib/avatar.ts`). The CDK
+carried the bucket's two S3 origins in `extraConnectSrc` (`avatarsS3Origins`), but that is one value for all three
+environments in the workflow and the bucket name carries the environment. It is passed as `AVATAR_UPLOAD_ORIGIN` in
+each `build-env-*` block instead: nothing reads it (it is not `NEXT_PUBLIC_*`, so Next never inlines it), but the
+generator derives `connect-src` from every `https://` origin in the build environment, so naming it there is what
+allows the upload. Only the dualstack alias is listed — the API forces `UseDualStackEndpoint`
+(`api/internal/app/app.go:242`) because poker instances have IPv6 egress only, so that is the only host a presigned
+URL is ever issued for.
 
-- [ ] Add a public `GET /v1.0/avatars/*` handler backed by `avatar.Service`, streaming from the existing bucket.
-- [ ] **Security:** validate the key against a strict pattern and force the `av/` prefix server-side. `up/` is the
-  upload quarantine (unverified content, 1-day lifecycle) and must be unreachable through this handler. Add a test that
-  a key attempting to reach `up/` or to traverse out of `av/` is rejected.
-- [ ] Set `Cache-Control: public, max-age=31536000, immutable` and a strong `ETag`; the key changes on every new upload,
-  so this is safe.
-- [ ] Rate-limit the read path independently of `avatarLimiter` (which guards uploads), so a cold cache cannot be used
-  to pull bytes through the `t4g.nano` in a loop.
-- [ ] Serve `404` — never a redirect to a presigned URL, which would defeat Cloudflare's cache and leak an expiry.
-- [ ] Repoint SSM `/ctech/{env}/poker/avatar-base-url` to `https://poker-api[-env].aoctech.app/v1.0/avatars`.
-- [ ] Move `AvatarsBucket` out of `FrontendStack` into a surviving stack **before** deleting that stack, and keep its
-  logical name so CloudFormation does not replace it. Its CORS rule (POST from the app domain) stays as is — uploads
-  keep going straight to S3.
-- [ ] Delete the `AvatarRewrite` function and the `/avatars/*` behaviour with the rest of the distribution in Phase 4.
-- [ ] Replace `frontend.yml` with a caller, passing `permissions-policy: on-device-speech-recognition=self` and the
-  `wss://poker-api[-env]` connect-src.
+**Done:**
+
+- [x] Public `GET /v1.0/avatars/:userId/:file` backed by `avatar.Service`, streamed with `SendStream`
+  (`api/internal/api/v1/avatars.go`). Registered on the unauthenticated `/v1.0` group, above the `auth`-gated ones.
+- [x] **Security:** `avatar.PublishedKey` / `avatar.UploadKey` are now the only way to build a key, and both refuse
+  unless the user ID matches the UUID that ctech-account issues as `sub` and the version is positive. The prefix is not
+  a caller's choice — it is the choice of which of the two functions to call — so `up/` is unaddressable from HTTP.
+  `player.go` was switched over from its inline `fmt.Sprintf("up/%s/%d.jpg", …)`. Covered by
+  `TestKeyBuildersRejectAnythingButAUUID`, `TestGetReadsOnlyThePublishedPrefix` and `TestPublicAvatarRead`, which
+  assert that traversal, percent-encoded traversal, a non-UUID id, a non-`.jpg` name and version `≤ 0` all 404
+  **without reaching S3 at all**.
+- [x] `Cache-Control: public, max-age=31536000, immutable`, plus S3's `ETag` (the object's MD5 — a strong validator)
+  and `X-Content-Type-Options: nosniff`. `Content-Type` is forced to `image/jpeg` rather than read from the object:
+  `ValidateAndPublish` rewrites it on the copy into `av/`, so the stored value is not worth trusting.
+  `If-None-Match` is deliberately **not** handled — keys are immutable and versioned, so no client ever revalidates.
+- [x] A separate read limiter: 600/min/IP, against `avatarLimiter`'s 5/hour/player. One table view legitimately fetches
+  nine images, and the route is unauthenticated, so it is keyed by IP.
+- [x] 404 for missing/invalid, never a redirect (asserted: the response carries no `Location`). A genuine storage
+  failure is **502**, not 404 — both render a broken image, but only one is worth paging on.
+- [x] `AvatarsBucket` moved to a new `StorageStack` (`cdk/lib/storage-stack.ts`), same construct id and same physical
+  name, with the CORS rule and the `up/` quarantine lifecycle rule unchanged. Not folded into `PokerApiStack`: that
+  stack replaces instances on every release and a rollback there must not be able to reach user-uploaded content.
+- [x] `s3:GetObject` on `av/*` added to the instance role — it replaces the CloudFront OAC that used to read the
+  prefix. Asserted in `cdk/test/api-stack.test.ts`.
+- [x] The `/avatars/*` behaviour, the `AvatarHeaders` policy and the `AvatarRewrite` CloudFront Function are already
+  deleted from `FrontendStack` (they referenced the bucket). The rest of that stack still goes in Phase 4.
+
+**Out of band, and in this order.** Neither is a CDK deploy, so a `cdk deploy` will not correct a stale value:
+
+1. Adopt the existing bucket into `StorageStack`. In prod it is `RETAIN`, so removing it from `FrontendStack` orphans
+   it rather than deleting it, and a plain deploy of `StorageStack` would then fail on the name already existing:
+
+   ```
+   cdk deploy CtechPoker-Prod-Frontend    # bucket leaves the stack, survives (RETAIN)
+   cdk import CtechPoker-Prod-Storage     # adopt it: AvatarsBucket -> prod-ctech-poker-avatars
+   ```
+
+   In dev/stage the bucket is `DESTROY`/`autoDeleteObjects`, so it is simply deleted and recreated — no import, but
+   deploy `Frontend` before `Storage` or the name is still taken.
+
+2. Repoint the base URL. The parameter is provisioned out of band like every other one poker reads:
+
+   ```
+   aws ssm put-parameter --overwrite --type String \
+     --name /ctech/prod/poker/avatar-base-url \
+     --value https://poker-api.aoctech.app/v1.0/avatars
+   ```
+
+   Then refresh the ASG so `start.sh` re-reads it. Until that happens the API keeps serialising the old CloudFront
+   URLs, which 404 the moment DNS moves. **This is the step that makes poker's cutover safe** — do it before Phase 3
+   for poker, not after.
+
+- [x] `frontend.yml` replaced with a caller, passing `permissions-policy: on-device-speech-recognition=self`.
+
+**A third CSP gap, and the one that would have broken the most:** both realtime hooks derived the socket origin with
+`(process.env.NEXT_PUBLIC_API_URL || window.location.origin).replace(/^http/, 'ws')`. Nothing in the build environment
+then contains a `wss://` literal, so the generated `connect-src` would have carried `https://poker-api…` and not
+`wss://poker-api…` — and `connect-src` is scheme-exact, so **every** WebSocket would have been blocked the moment DNS
+moved. It did not show up under CloudFront because the socket rode the same-origin forward and `'self'` covered it.
+Fixed the same way dfe was: `NEXT_PUBLIC_WS_URL` is now explicit per environment and read by a single `wsOrigin()`
+helper (`ui/src/lib/ws/origin.ts`), which keeps the old derivation as the local-dev fallback. Both hooks call it, so
+the two copies of that expression are gone and the value cannot drift from `NEXT_PUBLIC_API_URL` unnoticed.
+
+Generated poker prod policy, verified against the workflow's own generator:
+
+```
+connect-src 'self' https://poker-api.aoctech.app wss://poker-api.aoctech.app
+            https://accounts-api.aoctech.app
+            https://prod-ctech-poker-avatars.s3.dualstack.us-east-1.amazonaws.com
+            https://challenges.cloudflare.com
+img-src 'self' data: https://poker-api.aoctech.app
+script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com
+frame-src https://challenges.cloudflare.com
+```
 
 ---
 
@@ -448,20 +575,62 @@ The caller now grants both. Pre-existing, not caused by this migration.
 directly in prod and the dev → stage → prod ladder is dropped.** Dev and stage Workers still get created whenever those
 branches are pushed; they are simply not gates any more. Rollback is unchanged and still costs one DNS record.
 
-Per service:
+### Cut over 2026-08-20 — `account`, `billing`, `dfe`, `wallet`
 
-- [ ] Deploy the prod Worker through CI (push to `main`).
-- [ ] Run the static gates on the `workers.dev` URL:
-  `verify.sh https://ctech-<service>-prod.aoctech.workers.dev <expected connect-src origins…>`.
-- [ ] Attach the custom domain and let the certificate issue while DNS still points at CloudFront.
-- [ ] Switch the DNS record to the Worker, proxy on.
-- [ ] Now run the gates that need the real origin: login round trip and cookie, one authenticated request with its
-  preflight, and — for `dfe` and `poker` — the WebSocket. These cannot pass on `workers.dev`, because the page origin is
-  not in `CORS_ALLOWED_ORIGINS`.
-- [ ] Record `curl -w '%{time_total}'` before and after. This, not `cf-cache-status`, is the evidence that the extra hop
-  is gone.
-- [ ] Set `prod-workers-dev: false` in that repo's caller and redeploy, so `<service>-prod.workers.dev` stops being a
-  second public origin outside the zone.
+**The mechanism is a Worker Route, not a custom domain, and the two staging steps this plan described do not exist.**
+The plan assumed the sequence "attach the custom domain, let the certificate issue while DNS still points at
+CloudFront, then switch the DNS record". None of that applies to a hostname already in a Cloudflare zone: Universal SSL
+had already issued, and attaching a *Custom Domain* would create or overwrite the DNS record — there is no window in
+which the domain is attached but not yet serving. A **Worker Route** (`<host>/*`) binds the Worker to the existing
+proxied record instead, so the record is never touched.
+
+That is strictly better than what was planned. Rollback is `wrangler triggers deploy --name <worker>` with no
+`--route`, or deleting the route in the dashboard: the DNS record still resolves to the CloudFront distribution, which
+is still deployed and still holds the last S3 state. No DNS propagation on the way out.
+
+It also folds in the last step for free: `wrangler triggers deploy` disables `workers_dev` when the Wrangler file does
+not set it, so `<service>-prod.workers.dev` returned 404 the moment the route landed — verified on all four.
+
+Per service, as actually run:
+
+- [x] Deploy the prod Worker through CI (push to `main`). All four green; poker's Frontend job was skipped because its
+  API job failed — see below.
+- [x] Static gates on the `workers.dev` URL. `verify.sh` gained a `ROUTES` override, because its route list was dfe's
+  and hardcoded. All four passed before any route was attached.
+- [x] Attach the Worker Route, billing → dfe → wallet → account. `account` is last on purpose: it is the identity
+  provider, so a broken frontend there breaks every login in the platform, not just its own.
+- [x] Re-run the static gates against the **real hostname**. All four passed.
+- [x] Record the latency. `time_starttransfer` on `/`, before → after:
+
+  | host | CloudFront | Worker |
+  |---|---|---|
+  | `accounts.aoctech.app` | 1.221s | 0.482s |
+  | `billing.aoctech.app`  | 1.171s | 0.402s |
+  | `dfe.aoctech.app`      | 1.155s | 0.520s |
+  | `wallet.aoctech.app`   | 0.942s (a 307 from the Function, not a page) | 0.700s |
+
+  `x-amz-cf-id` and `x-cache` are absent from all four responses now, which is the direct evidence that the hop is
+  gone; the timings are what it was worth.
+- [x] `workers.dev` disabled — all four return 404. **Still to do in code:** set `prod-workers-dev: false` in each
+  caller, or the next CI deploy re-enables it. The runtime state is correct; the declared state is not.
+- [ ] The gates that need the real origin — login round trip and cookie, one authenticated request with its preflight,
+  and the WebSocket for `dfe` and `wallet`. **Blocked until the ASG window (11:55–13:15 America/Sao_Paulo).** Every prod
+  ASG sits at `DesiredCapacity=0` outside it, so all five API hosts answer 503 and no auth gate can run. Accepted: no
+  environment carries real traffic, and rollback does not depend on the API.
+
+**Two things confirmed during the cutover, both of which the migration was for:**
+
+- `accounts.aoctech.app/.well-known/openid-configuration` now 404s and the API host serves it — the accepted
+  OIDC-discovery limit, observed rather than assumed.
+- An unknown path on `accounts` returned **200** during route propagation and **404** after. That 200 was CloudFront:
+  its Function rewrote the miss to `/404.html` and S3 answered 200, so a crawler was told every mistyped URL was a
+  page. `not_found_handling: 404-page` returns the same body with the right status.
+
+### Gate cleared before the cutover — `ctech-account` CORS
+
+`/ctech-account/prod/app-url` = `https://accounts.aoctech.app`, and `allowed-origins` already lists all five app hosts.
+With `AllowCredentials` on and `APP_URL` prepended to the allowlist (`api/cmd/api/main.go:278`), the cross-origin
+posture is correct for every service, not only account.
 
 **Order matters for two services:**
 
@@ -496,19 +665,53 @@ S3 state. No apply, no rebuild. For poker's avatars, the previous `AVATAR_BASE_U
 
 ---
 
-## Phase 5 — Documentation (1 day)
+## Phase 5 — Documentation — docs sweep done 2026-08-20
 
-- [ ] New ADR in each service repo: what moved, why, what the accepted limits are, and the rollback that was kept.
-  Reference D1–D5 above.
-- [ ] Amend `ctech-billing/docs/adr/0013-static-portal-same-origin-api.md` a second time: the static export half still
-  stands, the distribution is gone, and the `/v1.0/*` behaviour that ADR kept as a rollback no longer exists.
-- [ ] Rewrite every statement asserting that CloudFront forwards `/v1.0/*` or `/.well-known/*`:
-  `ctech-account/ui/{CLAUDE,AGENTS,FRONTEND,GUIDELINES}.md`, `ctech-account/README.md:628,658,661`,
-  `ctech-account/cdk/README.md:168`, `ctech-dfe/ui/next.config.ts` comment, `ctech-wallet/ui/next.config.ts` comment,
-  `ctech-poker/ui/next.config.ts`, `ctech-billing/ui/next.config.ts` comment, and each repo's `DEPLOYMENT.md`.
-- [ ] Record the Cloudflare token scope and rotation cadence in each repo's `DEPLOYMENT.md`.
+Done ahead of Phase 3, not after it: every repo's `CLAUDE.md` requires the documentation in the same change as the
+code, so the callers could not be committed while the docs next to them asserted the opposite.
+
+- [x] **ADR, where the repo keeps ADRs.** Only `ctech-billing` does. `docs/adr/0020-portal-on-cloudflare-workers.md`
+  supersedes the *hosting* half of 0013 — the same-origin half was already reversed by 0013's own amendment, and the
+  static-export half still stands. 0013's header now says so and the index lists 0020. The other four repos have no ADR
+  directory; their equivalent record is this plan, which they link.
+- [x] **`ctech-account`** — every UI doc asserted "CloudFront forwards `/v1.0/*` and `/.well-known/*` … CORS never
+  applies and cookies stay first-party", which is now false in all three clauses. Rewritten in
+  `ui/{CLAUDE,AGENTS,FRONTEND,GUIDELINES,README}.md`, `README.md` (intro, the CDK resource list, and step 5 of the
+  runbook, which still told the reader to set `NEXT_PUBLIC_API_URL=https://accounts.aoctech.app`), `cdk/README.md`
+  (§ 6 now opens by saying nothing routes through the stack) and the stale `next.config.ts` comment.
+- [x] **`ctech-billing`** — `ui/README.md` still documented `NEXT_PUBLIC_API_URL` as **empty**; the caller sets
+  `https://billing-api.aoctech.app`. Also `ARCHITECTURE.md § 10`, `README.md` (the `frontend.tf` row, the `ui/` row, the
+  ADR count, the checkout-manifest sentence), `PLAN.md`, `.github/workflows/README.md` (the `frontend.yml` row, the
+  "Terraform first" reason, the fourth deploy identity, the DNS row) and the `next.config.ts` comment.
+- [x] **`ctech-dfe`** — the UI docs said nothing about hosting at all, so nothing was wrong and nothing was right.
+  `ui/{CLAUDE,AGENTS}.md` gained the Cloudflare/cross-origin paragraph and a `connect-src` rule; `ui/README.md` gained
+  the same up top plus why `NEXT_PUBLIC_WS_URL` is not optional. `CONDUCT.md`'s "Edge routing (CloudFront in front of
+  the HAProxy API origin)" section was rewritten end to end — it described a route manifest, a rewrite function and an
+  `errorResponses` rule for machinery that no longer exists. `DOCS.md` and `OVERVIEW.md` corrected.
+- [x] **Cloudflare token scope** recorded once, on the `secrets:` block of
+  `ctech-cdk/.github/workflows/frontend-cloudflare.yml` — the one place all five callers read from, rather than five
+  `DEPLOYMENT.md` copies of the same paragraph. Only `ctech-dfe` has a `DEPLOYMENT.md` at all, and it covers the API.
 - [ ] Update `_analysis/` with the duplication that this migration removed, so the audit does not keep reporting five
   copies of a script that no longer exists.
+
+### Found by the sweep — a Phase 3 gate for `ctech-account`
+
+`APP_URL` is not only WebAuthn's RPID source. It is **prepended to the API's CORS allowlist**
+(`api/cmd/api/main.go:278`), and `AllowCredentials` is on. Cross-origin only works if
+`/ctech-account/prod/app-url` is exactly `https://accounts.aoctech.app`; if it is not, every call fails preflight the
+moment DNS moves. Could not be verified from here — no AWS credentials in this session — so it is a gate to run before
+the account cutover:
+
+```bash
+aws ssm get-parameters --region us-east-1 \
+  --names /ctech-account/prod/app-url /ctech-account/prod/allowed-origins \
+  --query 'Parameters[].[Name,Value]' --output text
+```
+
+The cookies themselves are fine and were checked in code: `ctech_rt` and `ctech_auth` are `SameSite=Lax`
+(`api/internal/handler/helpers.go:106`), and `accounts.aoctech.app` / `accounts-api.aoctech.app` share the registrable
+domain `aoctech.app` — cross-origin but **same-site**, so Lax is still sent. `withCredentials: true` is already set
+(`ui/src/lib/axios.ts:16`). Removing either that flag or `AllowCredentials` breaks every refresh silently.
 
 ---
 
