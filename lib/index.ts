@@ -19,16 +19,11 @@ export {
   CloudWatchAgentLogFile,
 } from './cloudwatch-agent-config';
 export {
-  createNextjsStaticFrontend,
-  NextjsStaticFrontendBehaviorContext,
-  NextjsStaticFrontendProps,
-  NextjsStaticFrontendResources,
-} from './nextjs-static-frontend';
-export {
   HaproxyEc2Service,
   HaproxyEc2ServiceProps,
   HaproxyRouteRegistrationProps,
   AsgScheduleProps,
+  AsgSpotProps,
   DEFAULT_ASG_SCHEDULE,
   addAsgSchedule,
 } from './haproxy-ec2-service';

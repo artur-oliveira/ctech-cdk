@@ -70,6 +70,26 @@ export function addAsgSchedule(
   enabledAction.addPropertyOverride('ScheduledActionName', 'asg-scheduled-enable');
 }
 
+export interface AsgSpotProps {
+  /**
+   * Percentage of capacity that should use Spot.
+   * Default: 100.
+   */
+  percentage?: number;
+  
+  /**
+   * Spot allocation strategy.
+   * Default: price-capacity-optimized.
+   */
+  allocationStrategy?: autoscaling.SpotAllocationStrategy;
+  
+  /**
+   * Enable Capacity Rebalancing.
+   * Default: true.
+   */
+  capacityRebalance?: boolean;
+}
+
 export interface HaproxyEc2ServiceProps {
   vpc: ec2.IVpc;
   edgeSecurityGroup: ec2.ISecurityGroup;
@@ -94,6 +114,7 @@ export interface HaproxyEc2ServiceProps {
   cpuTargetUtilizationPercent?: number;
   route?: HaproxyRouteRegistrationProps;
   schedule?: AsgScheduleProps;
+  spot?: AsgSpotProps;
 }
 
 /**
@@ -148,15 +169,19 @@ export class HaproxyEc2Service extends Construct {
         removalPolicy: props.logRemovalPolicy,
       });
     }
-    
-    this.launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
-      launchTemplateName: `${props.asgName}-lt`,
-      instanceType: props.instanceType
-        ?? ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
-      machineImage: props.machineImage ?? ec2.MachineImage.latestAmazonLinux2023({
+    const instanceType = (
+      props.instanceType ?? ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO)
+    );
+    const machineImage = (
+      props.machineImage ?? ec2.MachineImage.latestAmazonLinux2023({
         cpuType: ec2.AmazonLinuxCpuType.ARM_64,
         edition: ec2.AmazonLinuxEdition.MINIMAL,
-      }),
+      })
+    );
+    this.launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
+      launchTemplateName: `${props.asgName}-lt`,
+      instanceType,
+      machineImage,
       blockDevices: [{
         deviceName: '/dev/xvda',
         volume: ec2.BlockDeviceVolume.ebs(props.rootVolumeGiB ?? 3, {
@@ -193,11 +218,25 @@ export class HaproxyEc2Service extends Construct {
       }],
     );
     
+    const spotPercentage = props.spot?.percentage ?? 100;
+    const onDemandPercentageAboveBaseCapacity = 100 - spotPercentage;
+    
+    const spotAllocationStrategy = (
+      props.spot?.allocationStrategy ?? autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED
+    );
+    
     this.autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'AutoScalingGroup', {
       autoScalingGroupName: props.asgName,
       vpc: props.vpc,
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
-      launchTemplate: this.launchTemplate,
+      mixedInstancesPolicy: {
+        launchTemplate: this.launchTemplate,
+        instancesDistribution: {
+          onDemandPercentageAboveBaseCapacity,
+          spotAllocationStrategy
+        },
+      },
+      capacityRebalance: props.spot ? props.spot.capacityRebalance ?? true : undefined,
       minCapacity: props.minCapacity,
       maxCapacity: props.maxCapacity,
       desiredCapacity: props.desiredCapacity,

@@ -67,10 +67,8 @@ export interface GithubActionsDeployRolesProps {
 }
 
 /**
- * The three GitHub Actions deploy roles every CTech service repeats (B20):
+ * The two GitHub Actions deploy roles every CTech service repeats (B20):
  *
- * - `frontendRole` — S3 sync to `*-${service}-frontend`, CloudFront
- *   invalidation, URL-rewrite KV-store manifest, DescribeStacks.
  * - `apiRole` — artifact upload to the shared deployments bucket under
  *   `${service}/`, SSM RunCommand rolling deploy, ASG discovery/refresh.
  * - `infraRole` — `cdk deploy` (AdministratorAccess; scoping is B11).
@@ -80,7 +78,6 @@ export interface GithubActionsDeployRolesProps {
  */
 export class GithubActionsDeployRoles extends Construct {
   readonly trust: iam.WebIdentityPrincipal;
-  readonly frontendRole: iam.Role;
   readonly apiRole: iam.Role;
   readonly infraRole: iam.Role;
   private readonly service: string;
@@ -94,38 +91,6 @@ export class GithubActionsDeployRoles extends Construct {
     this.service = service;
     this.deploymentsBucket = deploymentsBucket;
     this.trust = githubTrustPrincipal(scope, githubRepo, props.allowedSubSuffixes);
-
-    // ── Frontend deploy role ────────────────────────────────────────────────
-    this.frontendRole = new iam.Role(this, 'FrontendDeployRole', {
-      roleName: `${service}-gha-frontend`,
-      assumedBy: this.trust,
-    });
-    this.frontendRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject', 's3:ListBucket'],
-      resources: [
-        `arn:aws:s3:::*-${service}-frontend`,
-        `arn:aws:s3:::*-${service}-frontend/*`,
-      ],
-    }));
-    this.frontendRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['cloudfront:CreateInvalidation'],
-      resources: ['*'],
-    }));
-    // Route manifest for the URL-rewrite CloudFront Function. Published after
-    // the S3 sync so the key set matches the objects in the bucket.
-    this.frontendRole.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        'cloudfront-keyvaluestore:DescribeKeyValueStore',
-        'cloudfront-keyvaluestore:ListKeys',
-        'cloudfront-keyvaluestore:UpdateKeys',
-      ],
-      resources: [`arn:aws:cloudfront::${scope.account}:key-value-store/*`],
-    }));
-    // Reads the frontend stack's DistributionId output.
-    this.frontendRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['cloudformation:DescribeStacks'],
-      resources: ['*'],
-    }));
 
     // ── API deploy role ─────────────────────────────────────────────────────
     this.apiRole = new iam.Role(this, 'ApiDeployRole', {
@@ -182,7 +147,6 @@ export class GithubActionsDeployRoles extends Construct {
       iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess'),
     );
 
-    new cdk.CfnOutput(this, 'FrontendRoleArn', {value: this.frontendRole.roleArn});
     new cdk.CfnOutput(this, 'ApiRoleArn', {value: this.apiRole.roleArn});
     new cdk.CfnOutput(this, 'InfraRoleArn', {value: this.infraRole.roleArn});
   }

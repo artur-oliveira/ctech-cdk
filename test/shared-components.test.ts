@@ -7,7 +7,6 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import {
   addCloudflareOriginCaCommands,
   buildCloudWatchAgentConfig,
-  createNextjsStaticFrontend,
   HaproxyEc2Service,
 } from '../lib';
 
@@ -41,30 +40,6 @@ test('buildCloudWatchAgentConfig emits the bounded host metric set', () => {
   assert.equal(config.metrics.append_dimensions.InstanceId, '${aws:InstanceId}');
   assert.deepEqual(Object.keys(config.metrics.metrics_collected).sort(), ['disk', 'mem', 'procstat', 'swap']);
   assert.equal(config.agent.metrics_collection_interval, 60);
-});
-
-test('createNextjsStaticFrontend synthesizes the reusable static export core', () => {
-  const app = new cdk.App();
-  const stack = new cdk.Stack(app, 'FrontendFixture');
-  createNextjsStaticFrontend(stack, {
-    environment: 'dev',
-    serviceName: 'ctech-example',
-    bucketName: 'dev-ctech-example-frontend',
-    routeStoreName: 'dev-ctech-example-routes',
-    apiDomainName: 'example-api-dev.aoctech.app',
-    apiPathPatterns: ['/v1.0/*'],
-    connectSrc: ['https://accounts-dev.aoctech.app', 'wss://example-api-dev.aoctech.app'],
-    outputExportNamePrefix: 'Example-Dev-Frontend',
-  });
-
-  const template = Template.fromStack(stack);
-  template.resourceCountIs('AWS::S3::Bucket', 1);
-  template.resourceCountIs('AWS::CloudFront::Distribution', 1);
-  template.resourceCountIs('AWS::CloudFront::KeyValueStore', 1);
-  template.resourceCountIs('AWS::CloudFront::Function', 1);
-  template.hasResourceProperties('AWS::CloudFront::Distribution', {
-    DistributionConfig: Match.objectLike({HttpVersion: 'http2and3'}),
-  });
 });
 
 test('HaproxyEc2Service synthesizes ASG, dual-stack launch template and route', () => {

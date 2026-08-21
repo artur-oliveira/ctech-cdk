@@ -226,7 +226,6 @@ export class ValkeyStack extends cdk.Stack {
       'echo "@reboot root /opt/register-valkey.sh" > /etc/cron.d/valkey-register',
       'chmod 644 /etc/cron.d/valkey-register',
     );
-
     // ── Launch Template ───────────────────────────────────────────────────────
     const launchTemplate = new ec2.LaunchTemplate(this, 'ValkeyLaunchTemplate', {
       launchTemplateName: `${environment}-ctech-valkey-lt`,
@@ -264,7 +263,13 @@ export class ValkeyStack extends cdk.Stack {
       autoScalingGroupName: `${environment}-ctech-valkey`,
       vpc,
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
-      launchTemplate,
+      mixedInstancesPolicy: {
+        launchTemplate: launchTemplate,
+        instancesDistribution: {
+          onDemandPercentageAboveBaseCapacity: 100,
+          spotAllocationStrategy: autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED,
+        },
+      },
       minCapacity: isProd ? 1 : 0,
       maxCapacity: 1,
       cooldown: cdk.Duration.minutes(5),
