@@ -255,6 +255,16 @@ export class ValkeyStack extends cdk.Stack {
       AssociatePublicIpAddress: false,
       Ipv6AddressCount: 1,
     }]);
+    cfnLT.addPropertyOverride(
+      'LaunchTemplateData.TagSpecifications',
+      [{
+        ResourceType: 'instance',
+        Tags: [{
+          Key: 'Name',
+          Value: `${environment}-ctech-valkey`,
+        }],
+      }],
+    );
 
     // ── Auto Scaling Group ─────────────────────────────────────────────────────
     // prod: minCapacity=1 - always on, scale-in disabled.

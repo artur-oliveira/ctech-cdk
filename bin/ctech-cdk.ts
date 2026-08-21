@@ -93,9 +93,9 @@ new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
   environment: ENVIRONMENT,
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
-  schedule: {
-    enableCron: '50 11 * * *',
-    disableCron: '20 13 * * *'
-  },
+  // schedule: {
+  //   enableCron: '50 11 * * *',
+  //   disableCron: '20 13 * * *'
+  // },
   description: `CTech Shared ValKey Cache - ${ENVIRONMENT}`,
 })
