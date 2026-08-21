@@ -316,15 +316,45 @@ Written 2026-08-20: `.github/workflows/frontend-cloudflare.yml`, 276 lines, one 
 at 340 characters; applies `csp-overrides` in place for a known directive (`img-src`) and appends an unknown one
 (`media-src`); refuses a `connect-src` override; refuses an over-long header line.
 
-**Verification still to run:** call the workflow from `ctech-dfe` on the `dev` branch (Phase 2c) and diff the served
-response headers against the CloudFront-served `dfe-dev` before and after.
+**First live run, 2026-08-20 — `ctech-dfe-prod`.** The push landed on `main`, so the first deployment was the prod
+build, at `ctech-dfe-prod.aoctech.workers.dev`. No DNS moved, so nothing in production changed. 475 files uploaded, 75
+already present, 4.1 s. `verify.sh` passes every gate against it, and the generated policy is exactly what D7 promises:
+
+```
+connect-src 'self' https://dfe-api.aoctech.app wss://dfe-api.aoctech.app
+            https://accounts-api.aoctech.app https://accounts.aoctech.app https://viacep.com.br
+```
+
+including the `wss://` origin the hook derives at runtime. `cf-cache-status: HIT` on the second HTML request.
+
+`verify.sh` was parameterised as a result: expected `connect-src` origins are now positional arguments rather than the
+dev hosts hardcoded, so the same script serves every service and environment.
+
+**Added as a result: the `prod-workers-dev` input.** A Worker's `<name>.workers.dev` URL is a second public origin for
+the same app, and it is *outside the zone* — no zone WAF rule, rate limit, bot rule or Access policy applies to it. That
+is acceptable while it is the only way to reach a deployment, and not acceptable once `dfe.aoctech.app` points at the
+Worker. Phase 3 flips this input to `false` per service after the prod custom domain is live; dev and stage keep
+`workers.dev` unconditionally.
+
+**Still to verify, and it cannot be done on `workers.dev`:** login, an authenticated request with its preflight, and the
+WebSocket. From `ctech-dfe-prod.aoctech.workers.dev` the page origin is that hostname, which is not in
+`CORS_ALLOWED_ORIGINS` (`https://dfe.aoctech.app`), so the API refuses the request and `wsAllowedOrigin` refuses the
+upgrade. This is correct behaviour, not a bug — and it means the functional gates only pass once the custom domain is
+attached. Do them on `dfe-dev.aoctech.app` in Phase 3, not here. Do **not** add a `workers.dev` origin to
+`CORS_ALLOWED_ORIGINS` to work around it: that would leave a permanent allow-list entry for an origin nothing should
+use.
 
 ---
 
 ## Phase 2 — Per repository
 
-Each repository: replace `frontend.yml` with a caller, delete `publish-routes.sh`, keep the `deploy.yml` ordering and
-path filters untouched.
+Each repository: replace `frontend.yml` with a caller, keep the `deploy.yml` ordering and path filters untouched.
+
+**Amended while doing 2c:** the old workflow is *renamed* to `frontend-cloudfront.yml` rather than deleted, and
+`publish-routes.sh` stays. Both are `workflow_call`-only and now unreferenced, so neither can ever run — but keeping
+them means a rollback during the soak window can also ship a code change, not just flip DNS back to a frozen bucket.
+They go in Phase 4 with the distribution. `deploy.yml`'s frontend job loses `id-token: write` (no AWS role any more) and
+gains `secrets: inherit` so `CLOUDFLARE_*` reaches the reusable workflow two hops down.
 
 ### 2a — `ctech-account` (0.5 day)
 
@@ -344,17 +374,34 @@ path filters untouched.
 - [ ] Drop the SSM reads (`frontend-bucket`, `frontend-distribution-id`, `frontend-route-store-arn`) and the
   invalidation wait.
 
-### 2c — `ctech-dfe` (0.5 day)
+### 2c — `ctech-dfe` — done 2026-08-20
 
-- [ ] Change `NEXT_PUBLIC_API_URL` from `https://dfe[-env].aoctech.app` to `https://dfe-api[-env].aoctech.app` for all
-  three environments.
-- [ ] Check `NEXT_PUBLIC_WS_URL`: `ui/src/lib/hooks/useRealtimeUpdates.ts:15` falls back to `NEXT_PUBLIC_API_URL`, so
-  the WebSocket moves to the API hostname too. Confirm HAProxy's WebSocket path and any origin check accept it.
-- [ ] Confirm no infrastructure change is needed for CORS (`CORS_ALLOWED_ORIGINS="$SERVICE_AUDIENCE"`,
-  `AllowCredentials: true` already shipped) by exercising a mutating request from the browser on `dev`.
-- [ ] Update `connect-src` to include `dfe-api[-env]` and the `wss://` origin.
-- [ ] Move the `/docs` and `/openapi.*` references in `README.md`, `DOCS.md` and `ui/next.config.ts`'s comment to the
-  API hostname.
+- [x] `.github/workflows/frontend.yml` is now a 55-line caller of
+  `artur-oliveira/ctech-cdk/.github/workflows/frontend-cloudflare.yml@main`, carrying only the three `build-env` blocks
+  and `extra-connect-src: https://viacep.com.br`.
+- [x] `NEXT_PUBLIC_API_URL` moved from `dfe[-env].aoctech.app` to `dfe-api[-env].aoctech.app` in all three
+  environments.
+- [x] `NEXT_PUBLIC_WS_URL` is now **set explicitly** per environment. It used to be left unset so
+  `useRealtimeUpdates.ts:15` would fall back to `NEXT_PUBLIC_API_URL` and ride the CloudFront forward. The fallback
+  would still resolve to the right host, but D7 builds `connect-src` from the literals in `build-env`, and the hook
+  rewrites `https` to `wss` at runtime — so the derived policy would allow `https://dfe-api…` and block
+  `wss://dfe-api…`. Setting it makes the origin visible to the generator.
+- [x] **WebSocket origin check needs no change.** `wsAllowedOrigin` (`api/internal/api/v1/ws.go:62`) compares the
+  upgrade's `Origin` header against `cfg.CorsAllowedOrigins`. That header is the *page's* origin, still
+  `https://dfe[-env].aoctech.app`, which is exactly what `CORS_ALLOWED_ORIGINS="$SERVICE_AUDIENCE"` contains. Moving the
+  socket to the API host changes the target, not the origin.
+- [x] CORS needs no infrastructure change, for the same reason (`api/internal/app/app.go:203-209`,
+  `cdk/lib/api-stack.ts:165`). Still to be exercised from a browser on `dev`.
+- [x] `/docs` and `/openapi.*` documented as API-host-only in `DOCS.md` and `INTEGRATION.md`; the `next dev` rewrite
+  stays as a local convenience and its comment in `ui/next.config.ts` says so.
+- [x] `INTEGRATION.md`'s ui environment table was wrong independently of this work: it listed
+  `NEXT_PUBLIC_CTECH_URL` as `accounts.aoctech.app` (the app) when the workflows have always set the API host, and it
+  omitted `NEXT_PUBLIC_CTECH_CLIENT_URL` entirely. Both fixed.
+- [x] `ui/wrangler.jsonc` deleted (it was the Phase 0 spike copy) and added to `.gitignore`, since D6 generates it.
+
+**Not done, needs a browser on `dev`:** exercise login, one mutating request with its preflight, and the WebSocket
+after the first deploy. That is the Phase 1 verification too — this repo is where the reusable workflow gets its first
+real run.
 
 ### 2d — `ctech-wallet` (0.5 day)
 
@@ -389,7 +436,9 @@ path filters untouched.
 Per service, per environment, in the order dev → stage → prod. Never two environments of the same service on the same
 day.
 
-- [ ] Deploy the Worker through CI. Verify on its `workers.dev` URL first — no DNS involved.
+- [ ] Deploy the Worker through CI. Verify the **static** gates on its `workers.dev` URL first — no DNS involved.
+  `verify.sh <url> <expected connect-src origins…>` covers them. The auth, CORS and WebSocket gates cannot pass there,
+  because the page origin is not in `CORS_ALLOWED_ORIGINS`; they wait for the custom domain below.
 - [ ] Attach the custom domain and let the certificate issue while the DNS record still points at CloudFront.
 - [ ] Switch the DNS record to the Worker. Keep the proxy on.
 - [ ] Verify, in this order: HTML `200` with the expected `content-security-policy`; a nested pretty URL; an unknown
@@ -399,6 +448,8 @@ day.
   that the extra hop is gone; the header is documented as probabilistic on static assets.
 - [ ] Poker only: an avatar loads from the API hostname and returns the immutable `Cache-Control` on the second
   request.
+- [ ] Prod only, once the custom domain serves traffic: set `prod-workers-dev: false` in that repo's caller and
+  redeploy, so `<service>-prod.workers.dev` stops being a second origin outside the zone.
 - [ ] Soak: dev 1 day, stage 2 days, prod 1 week before its teardown is allowed.
 
 **Rollback:** point the DNS record back at the CloudFront distribution, which is still deployed and still synced with

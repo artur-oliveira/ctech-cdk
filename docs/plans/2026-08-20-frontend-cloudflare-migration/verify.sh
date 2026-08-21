@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Phase 0 gates. Usage: ./verify.sh https://ctech-dfe-dev.<subdomain>.workers.dev
 set -uo pipefail
-BASE="${1:?usage: verify.sh <base-url>}"
+BASE="${1:?usage: verify.sh <base-url> [expected-connect-src-origin ...]}"
+shift
+EXPECTED_ORIGINS=("$@")
 fail=0
 ok()   { printf '  PASS  %s\n' "$1"; }
 bad()  { printf '  FAIL  %s\n' "$1"; fail=1; }
@@ -45,10 +47,13 @@ for h in "${!want[@]}"; do
   [ "$got" = "${want[$h]}" ] && ok "$h" || bad "$h = '$got' (expected '${want[$h]}')"
 done
 csp=$(hdr "$BASE/" content-security-policy)
-for d in "default-src 'self'" "frame-ancestors 'none'" "object-src 'none'" \
-         "https://dfe-api-dev.aoctech.app" "https://accounts-api-dev.aoctech.app"; do
+for d in "default-src 'self'" "frame-ancestors 'none'" "object-src 'none'"; do
   case "$csp" in *"$d"*) ok "CSP contains: $d";; *) bad "CSP missing: $d";; esac
 done
+for d in ${EXPECTED_ORIGINS+"${EXPECTED_ORIGINS[@]}"}; do
+  case "$csp" in *"$d"*) ok "connect-src allows: $d";; *) bad "connect-src missing: $d";; esac
+done
+[ ${#EXPECTED_ORIGINS[@]} -gt 0 ] || printf '  INFO  no expected origins passed; connect-src not checked\n'
 
 echo "== immutable assets"
 asset=$(curl -sS "$BASE/" | grep -o '/_next/static/[^"]*\.js' | head -1)

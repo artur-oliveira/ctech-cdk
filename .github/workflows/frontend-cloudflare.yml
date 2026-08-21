@@ -52,14 +52,25 @@ on:
       csp-overrides:
         description: >
           One directive per line, replacing the default of the same name or adding a
-          new one, e.g. "img-src 'self' data: blob: https://bucket.example". Cannot
-          override connect-src, which is derived.
+          new one, e.g. "img-src 'self' data: blob: https://bucket.example". The
+          token $API_ORIGIN expands to this environment's NEXT_PUBLIC_API_URL
+          origin, so a directive can name the API host without being written three
+          times. Cannot override connect-src, which is derived.
         type: string
         default: ''
       permissions-policy:
         description: 'Value for the Permissions-Policy header. Empty means no header.'
         type: string
         default: ''
+      prod-workers-dev:
+        description: >
+          Keep the <worker>.workers.dev URL reachable in prod. Leave true until the
+          custom domain is live, then set false: workers.dev sits outside the zone,
+          so no zone WAF rule, rate limit, bot rule or Access policy applies to it,
+          and it would remain a second public origin for the same app. dev and
+          stage keep it unconditionally — reaching them without DNS is useful.
+        type: boolean
+        default: true
       wrangler-version:
         type: string
         default: '4.125.0'
@@ -174,6 +185,15 @@ jobs:
 
           connect = ["'self'"] + origins + os.environ['EXTRA_CONNECT_SRC'].split()
 
+          # Lets csp-overrides name the API host in a directive other than
+          # connect-src (poker's img-src, for the avatars) without repeating it
+          # per environment.
+          api_origin = ''
+          for line in open('build.env'):
+              if line.strip().startswith('NEXT_PUBLIC_API_URL='):
+                  api_origin = re.sub(r'(://[^/]+).*$', r'\1',
+                                      line.split('=', 1)[1].strip())
+
           csp = collections.OrderedDict([
               ('default-src', "'self'"),
               ('base-uri', "'self'"),
@@ -185,9 +205,12 @@ jobs:
               ('connect-src', ' '.join(connect)),
           ])
           for line in os.environ['CSP_OVERRIDES'].splitlines():
-              line = line.strip()
+              line = line.strip().replace('$API_ORIGIN', api_origin)
               if not line:
                   continue
+              if '$API_ORIGIN' in os.environ['CSP_OVERRIDES'] and not api_origin:
+                  raise SystemExit('::error::csp-overrides uses $API_ORIGIN but '
+                                   'build-env has no NEXT_PUBLIC_API_URL')
               name, _, value = line.partition(' ')
               if name == 'connect-src':
                   raise SystemExit('::error::connect-src is derived from build-env '
@@ -242,10 +265,15 @@ jobs:
       # deployments cannot drift apart.
       - name: Generate wrangler.jsonc
         run: |
+          workers_dev=true
+          if [ "${{ steps.env.outputs.name }}" = prod ] && [ "${{ inputs.prod-workers-dev }}" != true ]; then
+            workers_dev=false
+          fi
           cat > wrangler.jsonc <<JSON
           {
             "name": "${{ steps.env.outputs.worker }}",
             "compatibility_date": "2026-08-20",
+            "workers_dev": $workers_dev,
             "assets": {
               "directory": "./out",
               "html_handling": "auto-trailing-slash",
