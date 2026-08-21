@@ -152,7 +152,7 @@ export class ValkeyStack extends cdk.Stack {
       '}',
       'CWA',
       '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s',
-      
+
       // ── Custom Valkey metrics (per minute via cron) ─────────────────────────
       `cat > /opt/valkey-metrics.sh << 'METRICS'`,
       '#!/bin/bash',
@@ -163,11 +163,11 @@ export class ValkeyStack extends cdk.Stack {
 
       'INFO=$(valkey-cli --raw INFO 2>/dev/null || true)',
       '[ -z "$INFO" ] && exit 0',
-      
+
       'metric() {',
       '  echo "$INFO" | awk -F: -v key="$1" \'$1 == key { gsub("\\r", "", $2); print $2; exit }\'',
       '}',
-      
+
       'USED_MEMORY=$(metric used_memory)',
       'MAXMEMORY=$(metric maxmemory)',
       'CONNECTED_CLIENTS=$(metric connected_clients)',
@@ -176,12 +176,12 @@ export class ValkeyStack extends cdk.Stack {
       'MISSES=$(metric keyspace_misses)',
       'EVICTED_KEYS=$(metric evicted_keys)',
       'REJECTED_CONNECTIONS=$(metric rejected_connections)',
-      
+
       'MEMORY_USAGE_PERCENT=0',
       'if [ "${MAXMEMORY:-0}" -gt 0 ]; then',
       '  MEMORY_USAGE_PERCENT=$(awk "BEGIN { printf \\"%.2f\\", (${USED_MEMORY:-0} / ${MAXMEMORY:-1}) * 100 }")',
       'fi',
-      
+
       'aws cloudwatch put-metric-data --region "$REGION" \\',
       '  --namespace "$NS" \\',
       '  --metric-data "[' +
@@ -194,7 +194,7 @@ export class ValkeyStack extends cdk.Stack {
       '{\\"MetricName\\":\\"EvictedKeys\\",\\"Value\\":${EVICTED_KEYS:-0},\\"Unit\\":\\"Count\\"},' +
       '{\\"MetricName\\":\\"RejectedConnections\\",\\"Value\\":${REJECTED_CONNECTIONS:-0},\\"Unit\\":\\"Count\\"}' +
       ']"',
-      
+
       'METRICS',
       'chmod +x /opt/valkey-metrics.sh',
       'echo "* * * * * root /opt/valkey-metrics.sh" > /etc/cron.d/valkey-metrics',
@@ -266,10 +266,11 @@ export class ValkeyStack extends cdk.Stack {
       mixedInstancesPolicy: {
         launchTemplate: launchTemplate,
         instancesDistribution: {
-          onDemandPercentageAboveBaseCapacity: 100,
+          onDemandPercentageAboveBaseCapacity: 0,
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED,
         },
       },
+      capacityRebalance: true,
       minCapacity: isProd ? 1 : 0,
       maxCapacity: 1,
       cooldown: cdk.Duration.minutes(5),
