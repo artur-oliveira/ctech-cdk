@@ -311,4 +311,5 @@ jobs:
             echo "- Files: $(find out -type f 2>/dev/null | wc -l)"
             url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log 2>/dev/null | tail -1)
             [ -n "$url" ] && echo "- Worker URL: $url"
+            true
           } >> "$GITHUB_STEP_SUMMARY"
