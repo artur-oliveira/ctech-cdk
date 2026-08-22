@@ -68,11 +68,13 @@ export class ValkeyStack extends cdk.Stack {
         resources: [`arn:${this.partition}:route53:::hostedzone/${privateHostedZone.hostedZoneId}`],
       }));
     }
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['cloudwatch:PutMetricData'],
-      resources: ['*'],
-      conditions: {StringEquals: {'cloudwatch:namespace': VALKEY_METRIC_NAMESPACE(environment)}},
-    }));
+    // Custom metric publishing is intentionally disabled to keep the Valkey
+    // stack's CloudWatch custom-metric cost at zero.
+    // role.addToPolicy(new iam.PolicyStatement({
+    //   actions: ['cloudwatch:PutMetricData'],
+    //   resources: ['*'],
+    //   conditions: {StringEquals: {'cloudwatch:namespace': VALKEY_METRIC_NAMESPACE(environment)}},
+    // }));
 
     const instanceProfile = new iam.InstanceProfile(this, 'ValkeyInstanceProfile', {
       instanceProfileName: `${environment}-ctech-valkey-profile`,
@@ -134,12 +136,8 @@ export class ValkeyStack extends cdk.Stack {
       'CWAENV',
       `cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'`,
       '{',
-      '  "metrics": {',
-      `    "namespace": "${VALKEY_METRIC_NAMESPACE(environment)}",`,
-      '    "metrics_collected": {',
-      '      "mem": { "measurement": ["mem_used_percent"], "metrics_collection_interval": 60 }',
-      '    }',
-      '  },',
+      // The former `metrics` section published mem_used_percent every minute.
+      // Leave it out so the agent only ships logs and creates no custom metrics.
       '  "logs": {',
       '    "logs_collected": {',
       '      "files": {',
@@ -154,6 +152,9 @@ export class ValkeyStack extends cdk.Stack {
       '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s',
 
       // ── Custom Valkey metrics (per minute via cron) ─────────────────────────
+      /* Custom Valkey metrics are intentionally disabled to avoid custom-metric
+       * charges. Re-enable this block together with the scoped PutMetricData IAM
+       * statement above if these metrics are needed again.
       `cat > /opt/valkey-metrics.sh << 'METRICS'`,
       '#!/bin/bash',
       'set -uo pipefail',
@@ -199,6 +200,7 @@ export class ValkeyStack extends cdk.Stack {
       'chmod +x /opt/valkey-metrics.sh',
       'echo "* * * * * root /opt/valkey-metrics.sh" > /etc/cron.d/valkey-metrics',
       'chmod 644 /etc/cron.d/valkey-metrics',
+      */
 
       // ── Register private DNS/IP in SSM (no DB - consumers append /0, /1, etc.) ────
       `cat > /opt/register-valkey.sh << 'REG'`,
