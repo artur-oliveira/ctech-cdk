@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 )
 
@@ -29,6 +31,8 @@ func main() {
 		err = runS3Cp(ctx, args)
 	case "s3-head":
 		err = runS3Head(ctx, args)
+	case "logs-tail":
+		err = runLogsTail(ctx, args)
 	default:
 		err = fmt.Errorf("unknown subcommand %q", cmd)
 	}
@@ -39,4 +43,39 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ctech-ec2-agent %s: %v\n", cmd, err)
 		os.Exit(1)
 	}
+}
+
+func fetchInstanceID(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		"http://169.254.169.254/latest/api/token", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "60")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch IMDSv2 token: %w", err)
+	}
+	defer resp.Body.Close()
+	token, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet,
+		"http://169.254.169.254/latest/meta-data/instance-id", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-aws-ec2-metadata-token", string(token))
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch instance id: %w", err)
+	}
+	defer resp2.Body.Close()
+	id, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }

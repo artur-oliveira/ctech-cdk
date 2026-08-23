@@ -1,15 +1,16 @@
 module github.com/artur-oliveira/ctech-cdk/assets/ctech-ec2-agent
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.38
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.82.3
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.322.0
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.3
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.7
-	github.com/aws/smithy-go v1.27.8
+	github.com/aws/smithy-go v1.27.9
 )
 
 require (
