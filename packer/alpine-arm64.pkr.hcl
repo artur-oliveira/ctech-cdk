@@ -13,9 +13,9 @@ variable "region" {
 }
 
 source "amazon-ebs" "alpine_arm64" {
-  region        = var.region
-  instance_type = "t4g.nano"
-  ami_name      = "ctech-alpine-arm64-{{timestamp}}"
+  region          = var.region
+  instance_type   = "t4g.nano"
+  ami_name = "ctech-alpine-arm64-{{timestamp}}"
   # AWS AMI descriptions reject non-ASCII characters (no em dash).
   ami_description = "CTech Alpine ARM64 base image - amazon-ssm-agent + ctech-ec2-agent, no aws-cli, no CloudWatch Agent"
 
@@ -28,17 +28,34 @@ source "amazon-ebs" "alpine_arm64" {
       virtualization-type = "hvm"
       root-device-type    = "ebs"
     }
-    owners      = ["538276064493"] # Alpine Linux's AWS account
+    owners = ["538276064493"] # Alpine Linux's AWS account
     most_recent = true
   }
 
-  ssh_username    = "alpine"
+  ssh_username            = "alpine"
   ami_virtualization_type = "hvm"
+
+  # AWS's own auto-generated snapshot Description ("Created by CreateImage(...)
+  # for ami-...") is not overridable through this builder — it is set by the
+  # CreateImage call itself and immutable after creation. Tags are the
+  # supported way to make the AMI and its snapshot identifiable; they apply to
+  # both by default (see the repo-wide Name/Project tagging convention).
+  tags = {
+    Name    = "ctech-alpine-arm64"
+    Project = "ctech-cdk"
+  }
+
+  # Encrypts the AMI's backing snapshot at rest, matching every consumer
+  # stack's own encrypted:true on its launch template volume (defense in
+  # depth: the source image is encrypted independently of the consumer).
+  encrypt_boot = true
 
   launch_block_device_mappings {
     device_name = "/dev/xvda"
-    volume_size = 2 # build-time only; consumer stacks set their own rootVolumeGiB
-    volume_type = "gp3"
+    # Matches consumer stacks' rootVolumeGiB target (spec's disk budget) —
+    # confirmed sufficient: actual build output measured at 413 MiB.
+    volume_size           = 1
+    volume_type           = "gp3"
     delete_on_termination = true
   }
 }
