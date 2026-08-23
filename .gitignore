@@ -6,3 +6,4 @@ cdk.out/
 .idea/
 *.iml
 cdk.context.json
+assets/ctech-ec2-agent/dist/
