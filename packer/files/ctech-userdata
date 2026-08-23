@@ -1,0 +1,32 @@
+#!/sbin/openrc-run
+# Fetches raw EC2 user-data via IMDSv2 and executes it as root at boot.
+#
+# Needed because this Alpine AMI's cloud-init never runs EC2 user-data:
+# confirmed live (2026-08-23) that cloud-init's "modules:final" stage
+# completes in well under a second on every boot, with no package
+# installs or script output — too fast for scripts-user to have actually
+# executed our user-data. This service replaces that mechanism entirely
+# instead of depending on cloud-init's module configuration.
+
+description="Fetch and execute EC2 user-data"
+
+depend() {
+	need net
+}
+
+start() {
+	ebegin "Fetching and running EC2 user-data"
+	local token dest rc
+	dest=/var/lib/ctech-ec2-agent/user-data.sh
+	mkdir -p "$(dirname "$dest")"
+	token=$(curl -sf -m 5 -X PUT "http://169.254.169.254/latest/api/token" \
+		-H "X-aws-ec2-metadata-token-ttl-seconds: 60") || token=""
+	curl -sf -m 10 -H "X-aws-ec2-metadata-token: $token" \
+		"http://169.254.169.254/latest/user-data" -o "$dest" || true
+	rc=0
+	if [ -s "$dest" ]; then
+		chmod +x "$dest"
+		"$dest" >/var/log/ctech-userdata.log 2>&1 || rc=$?
+	fi
+	eend "$rc"
+}

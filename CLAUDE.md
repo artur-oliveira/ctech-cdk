@@ -165,9 +165,16 @@ consumed by any deployed stack — `ValkeyStackV2` is the first consumer, staged
 but commented out in `bin/ctech-cdk.ts`.
 
 - `packer/alpine-arm64.pkr.hcl`: builds from Alpine's official AWS cloud image
-  (owner `538276064493`), installs `amazon-ssm-agent`/`amazon-ssm-agent-openrc`
-  and the `ctech-ec2-agent` binary, nothing else. Session Manager access and
-  `send-command` deploys both depend on `amazon-ssm-agent` — never drop it.
+  (owner `538276064493`), installs `amazon-ssm-agent`/`amazon-ssm-agent-openrc`,
+  `curl`, and the `ctech-ec2-agent` binary, nothing else. Session Manager access
+  and `send-command` deploys both depend on `amazon-ssm-agent` — never drop it.
+  Also bakes in `/etc/init.d/ctech-userdata` (`packer/files/ctech-userdata`),
+  enabled in the default runlevel: this Alpine cloud image's cloud-init never
+  executes EC2 user-data (confirmed live 2026-08-23 — `modules:final` completes
+  in well under a second with no package installs or script output), so this
+  OpenRC service fetches user-data from IMDS and runs it directly instead. Every
+  Alpine consumer's `ec2.UserData` therefore only actually runs via this
+  service, not via cloud-init's `scripts-user` module.
 - `.github/workflows/build-alpine-ami.yml` (`workflow_dispatch`): resolves the
   `ctech-ec2-agent` build for the chosen environment from SSM, runs
   `packer build`, publishes the resulting AMI id to

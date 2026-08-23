@@ -70,7 +70,7 @@ build {
     # rc-service over systemctl elsewhere in this pipeline.
     inline = [
       "doas apk update",
-      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc",
+      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl",
       "doas rc-update add amazon-ssm-agent default",
     ]
   }
@@ -89,6 +89,22 @@ build {
   provisioner "shell" {
     inline = [
       "doas install -m 0755 /tmp/ctech-ec2-agent /usr/local/bin/ctech-ec2-agent",
+    ]
+  }
+
+  # This Alpine cloud image's cloud-init never executes EC2 user-data (see
+  # files/ctech-userdata's comment for how that was confirmed on a live
+  # instance) — this OpenRC service replaces that mechanism, fetching and
+  # running user-data directly via IMDS instead.
+  provisioner "file" {
+    source      = "files/ctech-userdata"
+    destination = "/tmp/ctech-userdata"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "doas install -m 0755 /tmp/ctech-userdata /etc/init.d/ctech-userdata",
+      "doas rc-update add ctech-userdata default",
     ]
   }
 }
