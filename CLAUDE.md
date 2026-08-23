@@ -166,8 +166,12 @@ but commented out in `bin/ctech-cdk.ts`.
 
 - `packer/alpine-arm64.pkr.hcl`: builds from Alpine's official AWS cloud image
   (owner `538276064493`), installs `amazon-ssm-agent`/`amazon-ssm-agent-openrc`,
-  `curl`, and the `ctech-ec2-agent` binary, nothing else. Session Manager access
-  and `send-command` deploys both depend on `amazon-ssm-agent` — never drop it.
+  `curl`, `bash`, and the `ctech-ec2-agent` binary, nothing else. Session
+  Manager access and `send-command` deploys both depend on `amazon-ssm-agent`
+  — never drop it. `bash` is required too: every `assets/ec2-alpine/*.sh`
+  script and CDK's own `ec2.UserData.forLinux()` output use a `#!/bin/bash`
+  shebang, and Alpine's cloud image ships only busybox `ash` — confirmed live
+  as an exit-127 "not found" on every one of them without it.
   Also bakes in `/etc/init.d/ctech-userdata` (`packer/files/ctech-userdata`),
   enabled in the default runlevel: this Alpine cloud image's cloud-init never
   executes EC2 user-data (confirmed live 2026-08-23 — `modules:final` completes

@@ -70,7 +70,11 @@ build {
     # rc-service over systemctl elsewhere in this pipeline.
     inline = [
       "doas apk update",
-      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl",
+      # bash: every ec2-alpine script and CDK's own ec2.UserData.forLinux()
+      # output use a #!/bin/bash shebang; Alpine's cloud image ships only
+      # busybox ash, so without this every one of them fails to exec at
+      # all (confirmed live: exit 127, "not found").
+      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl bash",
       "doas rc-update add amazon-ssm-agent default",
     ]
   }
