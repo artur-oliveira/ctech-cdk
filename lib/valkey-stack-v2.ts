@@ -120,6 +120,13 @@ export class ValkeyStackV2 extends cdk.Stack {
       'timeout 0',
       'logfile /var/log/valkey/valkey.log',
       'VALKEYCONF',
+      // Unlike the AL2023 RPM, Alpine's valkey apk package never creates
+      // /var/log/valkey — its openrc start_pre() only checkpath -f's the
+      // logfile itself, which doesn't create a missing parent directory,
+      // so valkey fails to start with "checkpath: ... could not open"
+      // (confirmed live) unless this exists first.
+      'mkdir -p /var/log/valkey',
+      'chown valkey:valkey /var/log/valkey',
       'rc-update add valkey default',
       'rc-service valkey start',
 
