@@ -322,4 +322,24 @@ changes the asset hash, which changes every consuming service's user data on its
 next deploy — that is what triggers the instance refresh, and it means a script
 change is a cross-repository change.
 
+#### Zero-downtime rolling deploy on a single instance
+
+By default `deploy.sh` restarts one `app` process, so a deploy has a brief gap
+while it comes back up. A service can opt into a second process on an
+alternate port instead — nginx round-robins across both, and `deploy.sh` rolls
+them one at a time so the instance keeps serving throughout:
+
+```ts
+scripts.run(userData, 'setup-nginx.sh', '8080', '8000', '/v1.0/health-check', '100', '1m', '8001');
+scripts.run(userData, 'setup-app-service.sh', 'CTech Example API', 'app', 'network.target nginx.service', '8001');
+scripts.run(userData, 'setup-deploy.sh', deploymentsBucketName, 'app', 'http://127.0.0.1:8000/v1.0/health-check');
+```
+
+`setup-deploy.sh` needs no change to opt in — it detects the alt port from
+`/opt/app/alt-port`, written by `setup-app-service.sh`. Omitting the alt-port
+argument on both calls (the existing behavior of every current service) keeps
+the traditional single-process restart. The trade-off is a permanently
+resident second process (RAM, always-on) in exchange for no restart gap;
+skip it on memory-constrained instances that can tolerate the few-second blip.
+
 Do not add service-specific tables, Lambdas, or buckets to this repository.

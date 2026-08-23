@@ -8,6 +8,11 @@
 #
 # The extra binaries are the one-shot job binaries a release ships alongside the
 # service: they need the exec bit too, and a zip does not carry it reliably.
+#
+# No argument here selects zero-downtime rolling deploy — it is auto-detected
+# at deploy time from /opt/app/alt-port, written by setup-app-service.sh's own
+# alt-port argument. Instances without that file get the traditional single
+# restart; instances with it roll app then app2, health-gating each in turn.
 set -euo pipefail
 
 BUCKET="${1:?setup-deploy.sh: deployments bucket required}"
@@ -35,25 +40,35 @@ unzip -o /tmp/release.zip -d "$RELEASE_DIR"
 for b in __BINARIES__; do chmod +x "$RELEASE_DIR/$b"; done
 chown -R webapp:webapp "$RELEASE_DIR"
 ln -sfT "$RELEASE_DIR" /opt/app/current
-systemctl restart app 2>/dev/null || systemctl start app
 
-for _ in {1..60}; do
-  if curl -sf "__HEALTH_URL__" >/dev/null; then
-    echo "Health check passed"
-    break
-  fi
-  if systemctl is-failed --quiet app; then
-    echo "Application failed to start"
-    journalctl -u app --no-pager -n 100 || true
-    exit 1
-  fi
-  sleep 2
-done
-
-curl -sf "__HEALTH_URL__" >/dev/null || {
-  echo "Timed out waiting for health check"
-  exit 1
+restart_and_wait() {
+  local unit="$1" url="$2"
+  systemctl restart "$unit" 2>/dev/null || systemctl start "$unit"
+  for _ in {1..60}; do
+    if curl -sf "$url" >/dev/null; then
+      echo "$unit: health check passed"
+      return 0
+    fi
+    if systemctl is-failed --quiet "$unit"; then
+      echo "$unit: application failed to start"
+      journalctl -u "$unit" --no-pager -n 100 || true
+      exit 1
+    fi
+    sleep 2
+  done
+  curl -sf "$url" >/dev/null || { echo "$unit: timed out waiting for health check"; exit 1; }
 }
+
+if [ -f /opt/app/alt-port ]; then
+  # Rolling: app then app2, one at a time. nginx round-robins across both
+  # ports, so the instance keeps serving from whichever unit is still up.
+  ALT_PORT="$(cat /opt/app/alt-port)"
+  ALT_HEALTH_URL="$(echo "__HEALTH_URL__" | sed -E "s/:[0-9]+/:${ALT_PORT}/")"
+  restart_and_wait app "__HEALTH_URL__"
+  restart_and_wait app2 "$ALT_HEALTH_URL"
+else
+  restart_and_wait app "__HEALTH_URL__"
+fi
 
 # Keep only the release that is live; the symlink already points at it.
 ls -dt /opt/app/releases/*/ 2>/dev/null | tail -n +2 | xargs rm -rf 2>/dev/null || true

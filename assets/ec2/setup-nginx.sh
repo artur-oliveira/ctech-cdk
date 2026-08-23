@@ -9,8 +9,13 @@
 #   /etc/nginx/conf.d/proxy-*.conf     included inside location / {} (extra limit_req/limit_conn)
 # realip.conf matches neither glob and is included on its own line, exactly once.
 #
-# Usage: setup-nginx.sh <nginx-port> <app-port> <health-path> [rate-per-second] [max-body]
+# Usage: setup-nginx.sh <nginx-port> <app-port> <health-path> [rate-per-second] [max-body] [app-port-alt]
 #   setup-nginx.sh 8080 8000 /v1.0/health-check 20 5m
+#
+# app-port-alt is optional. When set, the upstream round-robins between
+# app-port and app-port-alt instead of a single backend — pair it with
+# setup-app-service.sh's own alt-port argument for a zero-downtime rolling
+# deploy on a single instance (see setup-deploy.sh).
 set -euo pipefail
 
 NGINX_PORT="${1:?setup-nginx.sh: nginx listen port required}"
@@ -18,6 +23,7 @@ APP_PORT="${2:?setup-nginx.sh: app upstream port required}"
 HEALTH_PATH="${3:?setup-nginx.sh: health check path required}"
 RATE="${4:-100}"
 MAX_BODY="${5:-1m}"
+APP_PORT_ALT="${6:-}"
 
 mkdir -p /etc/nginx/conf.d
 
@@ -105,6 +111,7 @@ http {
 
     upstream app {
         server 127.0.0.1:__APP_PORT__;
+__APP_PORT_ALT_LINE__
         keepalive 256;
         keepalive_requests 10000;
         keepalive_timeout 60s;
@@ -169,6 +176,14 @@ sed -i \
   -e "s|__RATE__|${RATE}|g" \
   -e "s|__MAX_BODY__|${MAX_BODY}|g" \
   /etc/nginx/nginx.conf
+
+# Round-robin is nginx's default with two servers listed — no backup/weight
+# flag needed for a 50/50 split across app-port and app-port-alt.
+if [ -n "$APP_PORT_ALT" ]; then
+  sed -i "s|__APP_PORT_ALT_LINE__|        server 127.0.0.1:${APP_PORT_ALT};|" /etc/nginx/nginx.conf
+else
+  sed -i "/__APP_PORT_ALT_LINE__/d" /etc/nginx/nginx.conf
+fi
 
 # Fail the boot here rather than serve a broken proxy: the ASG replacing the
 # instance is a better outcome than one that passes EC2 health checks with no

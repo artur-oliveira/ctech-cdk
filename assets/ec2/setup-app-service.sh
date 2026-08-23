@@ -8,13 +8,21 @@
 # Reading SSM at start rather than at boot is deliberate: an operator can change a
 # parameter and `systemctl restart app` without a redeploy.
 #
-# Usage: setup-app-service.sh <description> <binary-name> [After= units]
+# Usage: setup-app-service.sh <description> <binary-name> [After= units] [alt-port]
 #   setup-app-service.sh "CTech Wallet API" app "network.target nginx.service"
+#   setup-app-service.sh "CTech Wallet API" app "network.target nginx.service" 8081
+#
+# alt-port is optional. When set, a second unit (app2.service) runs the same
+# binary with PORT forced to alt-port, and /opt/app/alt-port is written so
+# deploy.sh (see setup-deploy.sh) knows to roll app and app2 one at a time
+# instead of restarting a single process. Pair with setup-nginx.sh's own
+# app-port-alt argument so nginx already balances across both.
 set -euo pipefail
 
 DESCRIPTION="${1:?setup-app-service.sh: unit description required}"
 BINARY="${2:?setup-app-service.sh: binary name required}"
 AFTER="${3:-network.target}"
+ALT_PORT="${4:-}"
 
 mkdir -p /opt/app
 
@@ -25,6 +33,9 @@ cat > /opt/app/start.sh << 'START'
 if [ -f /opt/app/current/release.env ]; then set -a; . /opt/app/current/release.env; set +a; fi
 if [ -f /opt/app/load-ssm-env.sh ]; then . /opt/app/load-ssm-env.sh; fi
 if [ -f /opt/app/service-env.sh ]; then . /opt/app/service-env.sh; fi
+# Set by app2.service's own Environment= line, never by the layers above:
+# forces the second process onto its dedicated port for a rolling deploy.
+if [ -n "${PORT_OVERRIDE:-}" ]; then PORT="$PORT_OVERRIDE"; export PORT; fi
 exec /opt/app/current/__BINARY__
 START
 
@@ -55,5 +66,35 @@ RestartSec=30
 WantedBy=multi-user.target
 SVC
 
+if [ -n "$ALT_PORT" ]; then
+  cat > /etc/systemd/system/app2.service << SVC2
+[Unit]
+Description=${DESCRIPTION} (alt)
+After=${AFTER}
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+User=webapp
+Group=webapp
+WorkingDirectory=/opt/app/current
+Environment=HOME=/opt/app
+Environment=PORT_OVERRIDE=${ALT_PORT}
+EnvironmentFile=/etc/app-static.env
+ExecStartPre=/bin/test -x /opt/app/current/${BINARY}
+ExecStart=/opt/app/start.sh
+StandardOutput=append:/var/log/app/app2.log
+StandardError=append:/var/log/app/app2.log
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+SVC2
+
+  echo "$ALT_PORT" > /opt/app/alt-port
+fi
+
 systemctl daemon-reload
 systemctl enable app
+if [ -n "$ALT_PORT" ]; then systemctl enable app2; fi

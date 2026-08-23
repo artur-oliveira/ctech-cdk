@@ -82,6 +82,14 @@ test('setup-nginx.sh exposes both extension points and never double-includes rea
   assert.match(body, /nginx -t/);
 });
 
+test('setup-nginx.sh only adds the second upstream server when app-port-alt is set', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-nginx.sh'), 'utf8');
+  assert.match(body, /APP_PORT_ALT="\$\{6:-\}"/);
+  assert.match(body, /if \[ -n "\$APP_PORT_ALT" \]; then/);
+  assert.match(body, /server 127\.0\.0\.1:\$\{APP_PORT_ALT\};/);
+  assert.match(body, /sed -i "\/__APP_PORT_ALT_LINE__\/d" \/etc\/nginx\/nginx\.conf/);
+});
+
 test('setup-ssm-env.sh rejects an argument that is not VAR=/path', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
   assert.match(body, /expected VAR=\/ssm\/path/);
@@ -106,6 +114,15 @@ test('setup-app-service.sh sources the three env layers in order', () => {
   assert.match(body, /EnvironmentFile=\/etc\/app-static\.env/);
 });
 
+test('setup-app-service.sh creates app2.service and the alt-port marker only when alt-port is set', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-app-service.sh'), 'utf8');
+  assert.match(body, /ALT_PORT="\$\{4:-\}"/);
+  assert.match(body, /if \[ -n "\$ALT_PORT" \]; then/);
+  assert.match(body, /Environment=PORT_OVERRIDE=\$\{ALT_PORT\}/);
+  assert.match(body, /echo "\$ALT_PORT" > \/opt\/app\/alt-port/);
+  assert.match(body, /if \[ -n "\$\{PORT_OVERRIDE:-\}" \]; then PORT="\$PORT_OVERRIDE"; export PORT; fi/);
+});
+
 test('setup-cloudwatch-agent.sh requires a config file and runs fetch-config', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-cloudwatch-agent.sh'), 'utf8');
   assert.match(body, /CONFIG="\$\{1:\?/);
@@ -115,9 +132,16 @@ test('setup-cloudwatch-agent.sh requires a config file and runs fetch-config', (
 test('setup-deploy.sh keeps the health-gated release swap', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
   assert.match(body, /ln -sfT "\$RELEASE_DIR" \/opt\/app\/current/);
-  assert.match(body, /systemctl is-failed --quiet app/);
-  assert.match(body, /journalctl -u app --no-pager/);
+  assert.match(body, /systemctl is-failed --quiet "\$unit"/);
+  assert.match(body, /journalctl -u "\$unit" --no-pager/);
   assert.match(body, /tail -n \+2 \| xargs rm -rf/, 'must prune all but the live release');
+});
+
+test('setup-deploy.sh rolls app then app2 only when /opt/app/alt-port exists', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
+  assert.match(body, /if \[ -f \/opt\/app\/alt-port \]; then/);
+  assert.match(body, /restart_and_wait app "__HEALTH_URL__"/);
+  assert.match(body, /restart_and_wait app2 "\$ALT_HEALTH_URL"/);
 });
 
 test('setup-logs.sh never fails the logrotate run', () => {
