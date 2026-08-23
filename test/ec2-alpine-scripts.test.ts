@@ -37,7 +37,8 @@ test('setup-base.sh uses apk and adduser, and enables no cron unit AL2023 needed
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-base.sh'), 'utf8');
   assert.match(body, /SERVICE="\$\{1:\?/);
   assert.match(body, /apk add --no-cache/);
-  assert.match(body, /adduser -S -D -H -s \/sbin\/nologin webapp/);
+  assert.match(body, /addgroup -S webapp/);
+  assert.match(body, /adduser -S -D -H -G webapp -s \/sbin\/nologin webapp/);
 });
 
 test('setup-dualstack.sh writes OpenRC conf.d, not a systemd override', () => {
