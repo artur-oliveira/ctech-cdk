@@ -74,7 +74,11 @@ build {
       # output use a #!/bin/bash shebang; Alpine's cloud image ships only
       # busybox ash, so without this every one of them fails to exec at
       # all (confirmed live: exit 127, "not found").
-      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl bash",
+      # util-linux: mkswap isn't a busybox applet the way it is on AL2023
+      # minimal, and every EC2 service on this AMI wants addSwapCommands
+      # (lib/ec2-userdata-fragments.ts) to work — base-image concern, not
+      # a per-service one.
+      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl bash util-linux",
       "doas rc-update add amazon-ssm-agent default",
       # amazon-ssm-agent provisions its own "ssm-user" for Session Manager
       # shells, and on systemd distros configures it in sudoers itself —

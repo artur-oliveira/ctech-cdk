@@ -105,11 +105,6 @@ export class ValkeyStackV2 extends cdk.Stack {
       // anything that fails below, instead of losing both at once.
       'ctech_run setup-dualstack.sh',
       'ctech_run setup-base.sh valkey valkey valkey-openrc',
-      // mkswap isn't a busybox applet — the AL2023 minimal image ships it
-      // out of the box, Alpine's doesn't. addSwapCommands (shared,
-      // unmodified) only calls dd/mkswap/swapon/fstab, all of which work
-      // fine on Alpine once util-linux is present.
-      'command -v mkswap >/dev/null || apk add --no-cache util-linux',
     );
     addSwapCommands(userData, 256);
     userData.addCommands(
