@@ -1,0 +1,69 @@
+name: Deploy backend via SSM
+description: >
+  Rolling-restarts a CTech backend service's ASG instances over SSM
+  RunCommand, running /opt/app/deploy.sh (written by ctech-cdk's
+  setup-deploy.sh) with the given artifact key. Requires AWS credentials
+  already configured in the job and the artifact already uploaded to
+  s3://<deployments-bucket>/<artifact-key>.
+
+inputs:
+  asg-name:
+    description: Auto Scaling Group name, e.g. prod-ctech-wallet.
+    required: true
+  artifact-key:
+    description: S3 key deploy.sh should fetch, e.g. ctech-wallet/api/current.zip.
+    required: true
+  timeout-seconds:
+    description: SSM command timeout in seconds.
+    required: false
+    default: "300"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ASG_NAME: ${{ inputs.asg-name }}
+        ARTIFACT_KEY: ${{ inputs.artifact-key }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+      run: |
+        set -euo pipefail
+
+        INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+          --auto-scaling-group-names "$ASG_NAME" \
+          --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
+          --output text | tr '\t' ',')
+
+        if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" = "None" ]; then
+          echo "No in-service instances in $ASG_NAME — new instances will bootstrap from $ARTIFACT_KEY"
+          exit 0
+        fi
+
+        # deploy.sh (setup-deploy.sh, ctech-cdk) auto-detects a rolling
+        # (app + app2) vs. traditional (app only) restart from files written
+        # by that instance's own userdata — this action does not need to know
+        # which.
+        COMMAND_ID=$(aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --targets "Key=instanceids,Values=$INSTANCE_IDS" \
+          --parameters "commands=['/opt/app/deploy.sh $ARTIFACT_KEY']" \
+          --timeout-seconds "$TIMEOUT_SECONDS" \
+          --query "Command.CommandId" --output text)
+
+        FAILED=0
+        for INSTANCE_ID in $(echo "$INSTANCE_IDS" | tr ',' ' '); do
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query "Status" --output text)
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::Deploy failed on $INSTANCE_ID ($STATUS)"
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query "StandardErrorContent" --output text
+            FAILED=1
+          else
+            echo "✓ $INSTANCE_ID"
+          fi
+        done
+        exit $FAILED
