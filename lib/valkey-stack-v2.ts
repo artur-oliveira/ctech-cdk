@@ -72,7 +72,7 @@ export class ValkeyStackV2 extends cdk.Stack {
     });
 
     const logGroup = new logs.LogGroup(this, 'ValkeyLogGroup', {
-      logGroupName: `/ctech/${environment}/valkey`,
+      logGroupName: `/ctech/${environment}/valkey-v2`,
       retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
       removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });

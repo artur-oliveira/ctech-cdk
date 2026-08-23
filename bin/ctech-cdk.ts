@@ -7,6 +7,7 @@ import {S3Stack} from '../lib/s3-stack';
 import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
+import {ValkeyStackV2} from "../lib/valkey-stack-v2";
 import {ValkeyStack} from "../lib/valkey-stack";
 
 const app = new cdk.App();
@@ -88,17 +89,17 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
 // });
 
 // Rollback to valkey, there's no performance gain on t4g.nano instances
-new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
-  env,
-  environment: ENVIRONMENT,
-  vpc: networkStack.vpc,
-  privateHostedZone: networkStack.privateHostedZone,
-  // schedule: {
-  //   enableCron: '50 11 * * *',
-  //   disableCron: '20 13 * * *'
-  // },
-  description: `CTech Shared ValKey Cache - ${ENVIRONMENT}`,
-})
+// new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
+//   env,
+//   environment: ENVIRONMENT,
+//   vpc: networkStack.vpc,
+//   privateHostedZone: networkStack.privateHostedZone,
+//   // schedule: {
+//   //   enableCron: '50 11 * * *',
+//   //   disableCron: '20 13 * * *'
+//   // },
+//   description: `CTech Shared ValKey Cache - ${ENVIRONMENT}`,
+// })
 
 // =====================
 // ValkeyStackV2 (Alpine) — staged for the prod cutover in
@@ -106,11 +107,11 @@ new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
 // that task's pre-cutover validation has passed.
 //
 // import {ValkeyStackV2} from '../lib/valkey-stack-v2';
-// new ValkeyStackV2(app, `Ctech-${cap(ENVIRONMENT)}-ValkeyV2`, {
-//   env,
-//   environment: ENVIRONMENT,
-//   vpc: networkStack.vpc,
-//   privateHostedZone: networkStack.privateHostedZone,
-//   description: `CTech Shared Valkey Cache (Alpine) - ${ENVIRONMENT}`,
-// });
+new ValkeyStackV2(app, `Ctech-${cap(ENVIRONMENT)}-ValkeyV2`, {
+  env,
+  environment: ENVIRONMENT,
+  vpc: networkStack.vpc,
+  privateHostedZone: networkStack.privateHostedZone,
+  description: `CTech Shared Valkey Cache (Alpine) - ${ENVIRONMENT}`,
+});
 // =====================
