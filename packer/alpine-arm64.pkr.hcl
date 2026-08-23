@@ -46,16 +46,20 @@ build {
   sources = ["source.amazon-ebs.alpine_arm64"]
 
   provisioner "shell" {
+    # Alpine's official cloud images have no sudo — doas is the native
+    # privilege-escalation tool (already installed, "alpine" user pre-permitted
+    # nopass), the same "use Alpine-native tooling" rule as apk over dnf and
+    # rc-service over systemctl elsewhere in this pipeline.
     inline = [
-      "sudo apk update",
-      "sudo apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc",
-      "sudo rc-update add amazon-ssm-agent default",
+      "doas apk update",
+      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc",
+      "doas rc-update add amazon-ssm-agent default",
     ]
   }
 
   provisioner "shell" {
     inline = [
-      "sudo mkdir -p /usr/local/bin",
+      "doas mkdir -p /usr/local/bin",
     ]
   }
 
@@ -66,7 +70,7 @@ build {
 
   provisioner "shell" {
     inline = [
-      "sudo install -m 0755 /tmp/ctech-ec2-agent /usr/local/bin/ctech-ec2-agent",
+      "doas install -m 0755 /tmp/ctech-ec2-agent /usr/local/bin/ctech-ec2-agent",
     ]
   }
 }
