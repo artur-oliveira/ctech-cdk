@@ -124,6 +124,7 @@ export class ValkeyStack extends cdk.Stack {
       'maxmemory-policy allkeys-lfu',
       'tcp-keepalive 60',
       'timeout 0',
+      'logfile /var/log/valkey/valkey.log',
       'VALKEYCONF',
       'systemctl enable valkey',
       'systemctl start valkey',
