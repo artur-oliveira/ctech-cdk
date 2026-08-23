@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -24,10 +25,17 @@ func main() {
 		err = runPrefixList(ctx, args)
 	case "route53-upsert":
 		err = runRoute53Upsert(ctx, args)
+	case "s3-cp":
+		err = runS3Cp(ctx, args)
+	case "s3-head":
+		err = runS3Head(ctx, args)
 	default:
 		err = fmt.Errorf("unknown subcommand %q", cmd)
 	}
 	if err != nil {
+		if errors.Is(err, errNotFound) {
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "ctech-ec2-agent %s: %v\n", cmd, err)
 		os.Exit(1)
 	}
