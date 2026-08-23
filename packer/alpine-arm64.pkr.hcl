@@ -15,6 +15,7 @@ variable "region" {
 source "amazon-ebs" "alpine_arm64" {
   region          = var.region
   instance_type   = "t4g.nano"
+  name            = "ctech-alpine-arm64"
   ami_name = "ctech-alpine-arm64-{{timestamp}}"
   # AWS AMI descriptions reject non-ASCII characters (no em dash).
   ami_description = "CTech Alpine ARM64 base image - amazon-ssm-agent + ctech-ec2-agent, no aws-cli, no CloudWatch Agent"
@@ -51,7 +52,7 @@ source "amazon-ebs" "alpine_arm64" {
   encrypt_boot = true
 
   launch_block_device_mappings {
-    device_name = "/dev/xvda"
+    device_name           = "/dev/xvda"
     # Matches consumer stacks' rootVolumeGiB target (spec's disk budget) —
     # confirmed sufficient: actual build output measured at 413 MiB.
     volume_size           = 1
