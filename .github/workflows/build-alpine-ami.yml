@@ -40,6 +40,14 @@ jobs:
           aws s3 cp "s3://${{ steps.agent.outputs.bucket }}/${{ steps.agent.outputs.version }}/ctech-ec2-agent" ./packer/ctech-ec2-agent
           chmod +x ./packer/ctech-ec2-agent
 
+      - name: Resolve previous AMI (for cleanup, if any)
+        id: previous
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          PREV_AMI=$(aws ssm get-parameter --name "/ctech/${TARGET_ENV}/ami/alpine/arm64" --query Parameter.Value --output text 2>/dev/null || echo "")
+          echo "ami_id=$PREV_AMI" >> "$GITHUB_OUTPUT"
+
       - uses: hashicorp/setup-packer@v3
         with:
           version: latest
@@ -65,3 +73,22 @@ jobs:
             --name "/ctech/${TARGET_ENV}/ami/alpine/arm64" \
             --value "$AMI_ID" \
             --type String --overwrite
+
+      # Only runs after the new AMI is confirmed live in SSM, and only against
+      # the AMI it just replaced — never the one just published. Without this,
+      # every re-run leaves its old AMI's EBS snapshot billing forever.
+      - name: Deregister the previous AMI and delete its snapshot
+        if: steps.previous.outputs.ami_id != '' && steps.previous.outputs.ami_id != steps.build.outputs.ami_id
+        env:
+          PREV_AMI: ${{ steps.previous.outputs.ami_id }}
+        run: |
+          SNAPSHOT_IDS=$(aws ec2 describe-images --image-ids "$PREV_AMI" \
+            --query 'Images[0].BlockDeviceMappings[].Ebs.SnapshotId' --output text 2>/dev/null || echo "")
+          aws ec2 deregister-image --image-id "$PREV_AMI" \
+            || echo "Could not deregister $PREV_AMI (already gone?) — continuing" >&2
+          for SNAP in $SNAPSHOT_IDS; do
+            if [ -n "$SNAP" ] && [ "$SNAP" != "None" ]; then
+              aws ec2 delete-snapshot --snapshot-id "$SNAP" \
+                || echo "Could not delete snapshot $SNAP — continuing" >&2
+            fi
+          done
