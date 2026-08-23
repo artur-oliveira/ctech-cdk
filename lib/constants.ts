@@ -37,4 +37,21 @@ export const SSM = {
     bucket: `/ctech/${env}/ec2-scripts/bucket`,
     version: `/ctech/${env}/ec2-scripts/version`,
   }),
+  // Published by the Packer AMI build workflow. Read by ValkeyStackV2 (and any
+  // later Alpine consumer) via ec2.MachineImage.fromSsmParameter — a rebuilt
+  // AMI only takes effect on that consumer's next `cdk deploy`, same as an
+  // ec2-scripts change.
+  amiAlpine: (env: string) => ({
+    arm64: `/ctech/${env}/ami/alpine/arm64`,
+  }),
+  // Same content-hash publishing pattern as ec2Scripts, for assets/ec2-alpine.
+  ec2ScriptsAlpine: (env: string) => ({
+    bucket: `/ctech/${env}/ec2-scripts-alpine/bucket`,
+    version: `/ctech/${env}/ec2-scripts-alpine/version`,
+  }),
+  // Same pattern again, for the compiled ctech-ec2-agent binary.
+  ctechEc2Agent: (env: string) => ({
+    bucket: `/ctech/${env}/ctech-ec2-agent/bucket`,
+    version: `/ctech/${env}/ctech-ec2-agent/version`,
+  }),
 } as SSMParams;

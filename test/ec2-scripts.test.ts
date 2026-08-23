@@ -164,6 +164,20 @@ test('SSM.ec2Scripts exposes the bucket and version paths', () => {
   assert.equal(SSM.ec2Scripts('prod').version, '/ctech/prod/ec2-scripts/version');
 });
 
+test('SSM.amiAlpine exposes the arm64 AMI id path', () => {
+  assert.equal(SSM.amiAlpine('prod').arm64, '/ctech/prod/ami/alpine/arm64');
+});
+
+test('SSM.ec2ScriptsAlpine exposes the bucket and version paths', () => {
+  assert.equal(SSM.ec2ScriptsAlpine('prod').bucket, '/ctech/prod/ec2-scripts-alpine/bucket');
+  assert.equal(SSM.ec2ScriptsAlpine('prod').version, '/ctech/prod/ec2-scripts-alpine/version');
+});
+
+test('SSM.ctechEc2Agent exposes the bucket and version paths', () => {
+  assert.equal(SSM.ctechEc2Agent('prod').bucket, '/ctech/prod/ctech-ec2-agent/bucket');
+  assert.equal(SSM.ctechEc2Agent('prod').version, '/ctech/prod/ctech-ec2-agent/version');
+});
+
 test('Ec2ScriptsStack publishes the scripts under a content-hash prefix', () => {
   const app = new cdk.App();
   const stack = new Ec2ScriptsStack(app, 'ScriptsFixture', {

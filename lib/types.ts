@@ -27,4 +27,15 @@ export interface SSMParams {
     bucket: string;
     version: string;
   };
+  amiAlpine: (env: Environment) => {
+    arm64: string;
+  };
+  ec2ScriptsAlpine: (env: Environment) => {
+    bucket: string;
+    version: string;
+  };
+  ctechEc2Agent: (env: Environment) => {
+    bucket: string;
+    version: string;
+  };
 }
