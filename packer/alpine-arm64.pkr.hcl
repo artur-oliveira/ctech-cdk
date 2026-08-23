@@ -76,6 +76,12 @@ build {
       # all (confirmed live: exit 127, "not found").
       "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl bash",
       "doas rc-update add amazon-ssm-agent default",
+      # amazon-ssm-agent provisions its own "ssm-user" for Session Manager
+      # shells, and on systemd distros configures it in sudoers itself —
+      # it has no equivalent doas support on Alpine, so every session
+      # connects but can't doas anything (confirmed live: doas itself
+      # reports "Operation not permitted" for ssm-user).
+      "echo 'permit nopass ssm-user' | doas tee -a /etc/doas.conf >/dev/null",
     ]
   }
 
