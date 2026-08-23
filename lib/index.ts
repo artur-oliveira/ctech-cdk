@@ -14,6 +14,10 @@ export {
   addRealipRefreshCommands,
 } from './ec2-userdata-fragments';
 export {
+  addCloudflareOriginCaCommandsAlpine,
+  addDualStackSsmAgentCommandsAlpine,
+} from './ec2-userdata-fragments-alpine';
+export {
   buildCloudWatchAgentConfig,
   CloudWatchAgentConfigProps,
   CloudWatchAgentLogFile,
