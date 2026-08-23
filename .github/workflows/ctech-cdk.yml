@@ -22,7 +22,7 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Resolve environment
         id: env
@@ -33,7 +33,7 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -41,9 +41,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version-file: assets/ctech-ec2-agent/go.mod
+          cache-dependency-path: assets/ctech-ec2-agent/go.sum
 
       - name: Build ctech-ec2-agent
         working-directory: assets/ctech-ec2-agent
@@ -84,7 +85,7 @@ jobs:
     if: github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Resolve environment
         id: env
@@ -95,7 +96,7 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -103,9 +104,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version-file: assets/ctech-ec2-agent/go.mod
+          cache-dependency-path: assets/ctech-ec2-agent/go.sum
 
       - name: Build ctech-ec2-agent
         working-directory: assets/ctech-ec2-agent
