@@ -5,7 +5,6 @@ node_modules/
 cdk.out/
 .idea/
 *.iml
-cdk.context.json
 assets/ctech-ec2-agent/dist/
 # `go build ./...` with no -o drops a bare binary here named after the module.
 assets/ctech-ec2-agent/ctech-ec2-agent
