@@ -10,9 +10,11 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
 - `NetworkStack`: dual-stack/no-NAT VPC, gateway endpoints, shared edge SG, and
   the production private hosted zone;
 - `S3Stack`: shared deployments and application-log buckets;
-- `DragonflyStack`: shared EC2/ASG cache and pub/sub endpoint, replacing
-  `ValkeyStack` while keeping its `/ctech/{env}/valkey/url` and
-  `cache.internal.aoctech.app` contract;
+- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint (`t4g.nano`),
+  publishing `/ctech/{env}/valkey/url` and `cache.internal.aoctech.app`.
+  `DragonflyStack` (`lib/dragonfly-stack.ts`) exists but is not instantiated —
+  rolled back, no measured performance gain on a `t4g.nano` (commit
+  `4ca03db`). Do not re-enable it without re-measuring.
 - `Ec2ScriptsStack`: shared EC2 bootstrap scripts published under a content-hash
   prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers.
 
