@@ -29,6 +29,14 @@ runs:
       run: |
         set -euo pipefail
 
+        # ARTIFACT_KEY is interpolated into a shell command string that SSM
+        # runs on the instance (commands=[...] below) — reject anything that
+        # could break out of the single quotes before it ever gets there.
+        if [[ ! "$ARTIFACT_KEY" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+          echo "::error::artifact-key contains characters outside [A-Za-z0-9._/-]: $ARTIFACT_KEY"
+          exit 1
+        fi
+
         INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
           --auto-scaling-group-names "$ASG_NAME" \
           --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
