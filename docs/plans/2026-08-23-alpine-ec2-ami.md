@@ -2569,7 +2569,7 @@ permissions:
 jobs:
   build:
     name: Packer build
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v6
 

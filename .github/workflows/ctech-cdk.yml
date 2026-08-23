@@ -18,7 +18,7 @@ permissions:
 jobs:
   diff:
     name: CDK Diff
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04-arm
     if: github.event_name == 'pull_request'
 
     steps:
@@ -81,7 +81,7 @@ jobs:
 
   deploy:
     name: CDK Deploy
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-26.04-arm
     if: github.event_name == 'push'
 
     steps:
