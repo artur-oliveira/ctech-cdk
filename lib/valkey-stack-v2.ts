@@ -155,7 +155,15 @@ export class ValkeyStackV2 extends cdk.Stack {
       'apk add --no-cache busybox-openrc',
       'rc-update add crond default',
       'rc-service crond start',
-      'echo "$(( RANDOM % 60 )) * * * * root /opt/register-valkey.sh" > /etc/crontabs/root',
+      // Append, don't overwrite: this runs on every boot (see
+      // ctech-userdata), and blindly overwriting /etc/crontabs/root would
+      // erase any other job a future consumer relies on (e.g.
+      // setup-realip.sh's daily periodic run). The random minute changes
+      // every boot, so strip any previous copy of this line by content
+      // first instead of matching on the whole line.
+      'touch /etc/crontabs/root',
+      "sed -i '/register-valkey\\.sh/d' /etc/crontabs/root",
+      'echo "$(( RANDOM % 60 )) * * * * root /opt/register-valkey.sh" >> /etc/crontabs/root',
     );
 
     const machineImage = ec2.MachineImage.fromSsmParameter(
