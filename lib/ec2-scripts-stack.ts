@@ -30,6 +30,10 @@ export class Ec2ScriptsStack extends cdk.Stack {
   public readonly bucketName: string;
   /** Content hash of `assets/ec2`; also the S3 key prefix. */
   public readonly version: string;
+  /** Content hash of `assets/ec2-alpine`; also the S3 key prefix. */
+  public readonly alpineScriptsVersion: string;
+  /** Content hash of `assets/ctech-ec2-agent/dist`; also the S3 key prefix. */
+  public readonly agentVersion: string;
 
   constructor(scope: Construct, id: string, props: Ec2ScriptsStackProps) {
     super(scope, id, props);
@@ -75,6 +79,56 @@ export class Ec2ScriptsStack extends cdk.Stack {
       parameterName: SSM.ec2Scripts(environment).version,
       stringValue: this.version,
       description: 'Content hash and S3 key prefix of the current EC2 bootstrap scripts',
+    });
+
+    // ── Alpine scripts (same content-hash publishing pattern) ────────────────
+    const alpineAsset = new s3assets.Asset(this, 'AlpineScriptsAsset', {
+      path: path.join(__dirname, '..', 'assets', 'ec2-alpine'),
+    });
+    this.alpineScriptsVersion = alpineAsset.assetHash;
+
+    new s3deploy.BucketDeployment(this, 'PublishAlpineScripts', {
+      sources: [s3deploy.Source.bucket(alpineAsset.bucket, alpineAsset.s3ObjectKey)],
+      destinationBucket: bucket,
+      destinationKeyPrefix: this.alpineScriptsVersion,
+      prune: false,
+      retainOnDelete: true,
+    });
+
+    new ssm.StringParameter(this, 'AlpineScriptsBucketParam', {
+      parameterName: SSM.ec2ScriptsAlpine(environment).bucket,
+      stringValue: bucketName,
+      description: 'Bucket holding the Alpine EC2 bootstrap scripts',
+    });
+    new ssm.StringParameter(this, 'AlpineScriptsVersionParam', {
+      parameterName: SSM.ec2ScriptsAlpine(environment).version,
+      stringValue: this.alpineScriptsVersion,
+      description: 'Content hash and S3 key prefix of the current Alpine bootstrap scripts',
+    });
+
+    // ── ctech-ec2-agent binary (same pattern again) ───────────────────────────
+    const agentAsset = new s3assets.Asset(this, 'CtechEc2AgentAsset', {
+      path: path.join(__dirname, '..', 'assets', 'ctech-ec2-agent', 'dist'),
+    });
+    this.agentVersion = agentAsset.assetHash;
+
+    new s3deploy.BucketDeployment(this, 'PublishCtechEc2Agent', {
+      sources: [s3deploy.Source.bucket(agentAsset.bucket, agentAsset.s3ObjectKey)],
+      destinationBucket: bucket,
+      destinationKeyPrefix: this.agentVersion,
+      prune: false,
+      retainOnDelete: true,
+    });
+
+    new ssm.StringParameter(this, 'CtechEc2AgentBucketParam', {
+      parameterName: SSM.ctechEc2Agent(environment).bucket,
+      stringValue: bucketName,
+      description: 'Bucket holding the ctech-ec2-agent binary',
+    });
+    new ssm.StringParameter(this, 'CtechEc2AgentVersionParam', {
+      parameterName: SSM.ctechEc2Agent(environment).version,
+      stringValue: this.agentVersion,
+      description: 'Content hash and S3 key prefix of the current ctech-ec2-agent build',
     });
 
     new cdk.CfnOutput(this, 'ScriptsBucketName', {

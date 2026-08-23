@@ -219,6 +219,41 @@ test('Ec2ScriptsStack publishes the scripts under a content-hash prefix', () => 
   assert.match(stack.version, /^[0-9a-f]{64}$/, 'version must be the asset content hash');
 });
 
+test('Ec2ScriptsStack also publishes the Alpine scripts and the ctech-ec2-agent binary', () => {
+  const app = new cdk.App();
+  const stack = new Ec2ScriptsStack(app, 'AlpineScriptsFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+    environment: 'prod',
+  });
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties('Custom::CDKBucketDeployment', {
+    DestinationBucketKeyPrefix: stack.alpineScriptsVersion,
+    Prune: false,
+  });
+  template.hasResourceProperties('Custom::CDKBucketDeployment', {
+    DestinationBucketKeyPrefix: stack.agentVersion,
+    Prune: false,
+  });
+
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ec2-scripts-alpine/version',
+    Value: stack.alpineScriptsVersion,
+  });
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ec2-scripts-alpine/bucket',
+    Value: 'prod-ctech-ec2-scripts',
+  });
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ctech-ec2-agent/version',
+    Value: stack.agentVersion,
+  });
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/ctech/prod/ctech-ec2-agent/bucket',
+    Value: 'prod-ctech-ec2-scripts',
+  });
+});
+
 test('Ec2ScriptRunner emits a download-then-execute prelude, never a pipe to bash', () => {
   const app = new cdk.App();
   const stack = new cdk.Stack(app, 'RunnerFixture', {
