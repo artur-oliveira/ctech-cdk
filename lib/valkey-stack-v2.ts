@@ -83,6 +83,12 @@ export class ValkeyStackV2 extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       'set -euo pipefail',
+      // No public IPv4 and no NAT gateway on this instance — every AWS API
+      // call ctech-ec2-agent makes needs the dual-stack (IPv6-reachable)
+      // endpoint from its very first invocation, not just from
+      // setup-dualstack.sh onward (setup-dualstack.sh's job is persisting
+      // this for services that start later, e.g. OpenRC's ctech-ec2-agent-logs).
+      'export AWS_USE_DUALSTACK_ENDPOINT=true',
       // ctech-ec2-agent is baked into the AMI at build time (see
       // packer/alpine-arm64.pkr.hcl) — nothing here needs to fetch it, which
       // matters because there is no aws-cli on this image to bootstrap with.

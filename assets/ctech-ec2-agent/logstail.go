@@ -253,7 +253,9 @@ func runLogsTail(ctx context.Context, argv []string) error {
 		return err
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+	// No AWS_REGION is set anywhere in userData — resolve it from IMDS instead
+	// of failing every call with MissingRegion.
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithEC2IMDSRegion())
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
 	}

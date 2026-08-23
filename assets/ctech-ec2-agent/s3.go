@@ -52,7 +52,9 @@ func parseS3HeadArgs(argv []string) (s3HeadArgs, error) {
 }
 
 func newS3Client(ctx context.Context) (*s3.Client, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+	// No AWS_REGION is set anywhere in userData — resolve it from IMDS instead
+	// of failing every call with MissingRegion.
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithEC2IMDSRegion())
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config: %w", err)
 	}
