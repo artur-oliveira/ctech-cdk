@@ -79,6 +79,10 @@ export class ValkeyStackV2 extends cdk.Stack {
 
     const scriptsBucket = ssm.StringParameter.valueForStringParameter(this, SSM.ec2ScriptsAlpine(environment).bucket);
     const scriptsVersion = ssm.StringParameter.valueForStringParameter(this, SSM.ec2ScriptsAlpine(environment).version);
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject'],
+      resources: [`arn:aws:s3:::${scriptsBucket}/*`],
+    }));
 
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
