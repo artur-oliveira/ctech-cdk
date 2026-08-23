@@ -16,7 +16,18 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
   rolled back, no measured performance gain on a `t4g.nano` (commit
   `4ca03db`). Do not re-enable it without re-measuring.
 - `Ec2ScriptsStack`: shared EC2 bootstrap scripts published under a content-hash
-  prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers.
+  prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers. It also
+  publishes the Alpine script library and the `ctech-ec2-agent` binary the
+  same way — `/ctech/{env}/ec2-scripts-alpine/{bucket,version}` and
+  `/ctech/{env}/ctech-ec2-agent/{bucket,version}`.
+
+`lib/valkey-stack-v2.ts` (`ValkeyStackV2`) exists but is not instantiated —
+staged in `bin/ctech-cdk.ts`, commented out, pending the prod cutover in
+`docs/plans/2026-08-23-alpine-ec2-ami.md` Task 13. It is the Alpine/OpenRC
+equivalent of `ValkeyStack`, booting from an AMI resolved from
+`/ctech/{env}/ami/alpine/arm64` instead of Amazon Linux 2023. Same external
+contract (`/ctech/{env}/valkey/url`, `cache.internal.aoctech.app`) — the two
+cannot coexist in one environment.
 
 There is no deployed `AlbStack`. Public and private ingress is owned by
 `ctech-lbalancer`. `lib/alb-stack.ts`, `SSM.alb()`, and
@@ -51,7 +62,9 @@ It must not own service-specific IAM, secrets, ports, or business alarms.
 ## Contracts
 
 - SSM paths live in `lib/constants.ts`; `SSM` is exported from
-  `lib/index.ts`.
+  `lib/index.ts`. Includes `SSM.amiAlpine(env).arm64`,
+  `SSM.ec2ScriptsAlpine(env).{bucket,version}`, and
+  `SSM.ctechEc2Agent(env).{bucket,version}` — see "Alpine AMI pipeline".
 - Renaming/removing an SSM path is a cross-repository breaking change.
 - `Vpc.fromLookup` needs a concrete VPC ID at synth time; workflows normally
   read it from SSM into `CTECH_VPC_ID`.
@@ -70,7 +83,8 @@ Current public exports:
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
 - `GithubActionsDeployRoles`, props, and `githubTrustPrincipal`;
 - deprecated `PrivateIpv4Ec2Service`;
-- shared EC2 user-data fragments;
+- shared EC2 user-data fragments (AL2023) and their Alpine/OpenRC equivalents
+  (`addDualStackSsmAgentCommandsAlpine`, `addCloudflareOriginCaCommandsAlpine`);
 - `Ec2ScriptRunner` and props;
 - `AsgScheduleProps`, `DEFAULT_ASG_SCHEDULE`, `addAsgSchedule`.
 
@@ -93,6 +107,8 @@ been verified and a major-version removal is planned.
 - GitHub Actions uses OIDC, not long-lived AWS access keys.
 - `ctech-gha-infra` currently has `AdministratorAccess` because it deploys
   broad account-level CDK resources. Do not reuse it for application deploys.
+- `ctech-gha-packer` is scoped to EC2 image-build actions only (see "Alpine
+  AMI pipeline") — never grant it `AdministratorAccess` or broader.
 - Keep service deploy roles separate by responsibility where possible.
 - Public services have no public IPv4 and the VPC has no NAT Gateway.
 - Never commit AWS credentials, certificate material, Cloudflare tokens, or
@@ -108,8 +124,10 @@ been verified and a major-version removal is planned.
   ephemeral cache/pub-sub and account for replacement outages. Its flags are
   sized for 512 MiB of RAM; see README before changing `--maxmemory`,
   `--proactor_threads` or `--dbnum`.
-- `lib/valkey-stack.ts` is no longer instantiated. Deleting the Valkey stack
-  in an environment is the prerequisite for deploying Dragonfly there.
+- `ValkeyStack` is the active cache stack; `lib/dragonfly-stack.ts` is not
+  instantiated. Deploying Dragonfly in an environment again would require
+  deleting the Valkey stack there first (not currently planned — see
+  "Source of truth").
 - The deployments bucket expires objects after 30 days.
 - The application-log archive bucket is retained and has no expiration; any
   lifecycle change requires a retention decision.
@@ -130,6 +148,47 @@ A service CDK should:
 7. use separate OIDC deployment roles and validate with synth.
 
 No listener priority or ALB rule is required.
+
+An Alpine/OpenRC EC2 base is available and optional: `lib/ec2-userdata-fragments-alpine.ts`
+for CDK callers (import instead of `ec2-userdata-fragments.ts` — `addSwapCommands`
+is shared, unchanged, and not duplicated), or `assets/ec2-alpine/*.sh` composed
+directly for Terraform callers (`ctech-billing`, `ctech-lbalancer`), same
+positional-argument contract as their `assets/ec2/*.sh` counterparts. Nothing
+requires a service to migrate; AL2023 stays fully supported.
+
+## Alpine AMI pipeline (staged)
+
+A Packer pipeline builds a custom Alpine ARM64 AMI, meant to eventually replace
+AL2023 minimal on new EC2 launch templates at a fraction of the root volume
+size (target `rootVolumeGiB: 1`, see the spec for the disk budget). Not yet
+consumed by any deployed stack — `ValkeyStackV2` is the first consumer, staged
+but commented out in `bin/ctech-cdk.ts`.
+
+- `packer/alpine-arm64.pkr.hcl`: builds from Alpine's official AWS cloud image
+  (owner `538276064493`), installs `amazon-ssm-agent`/`amazon-ssm-agent-openrc`
+  and the `ctech-ec2-agent` binary, nothing else. Session Manager access and
+  `send-command` deploys both depend on `amazon-ssm-agent` — never drop it.
+- `.github/workflows/build-alpine-ami.yml` (`workflow_dispatch`): resolves the
+  `ctech-ec2-agent` build for the chosen environment from SSM, runs
+  `packer build`, publishes the resulting AMI id to
+  `/ctech/{env}/ami/alpine/arm64`. Consumers resolve that parameter via
+  `ec2.MachineImage.fromSsmParameter` — a rebuilt AMI only takes effect on a
+  consumer's next `cdk deploy`, same as an `ec2-scripts` change.
+- Runs under `ctech-gha-packer`, a dedicated OIDC role (`lib/global-stack.ts`)
+  scoped to EC2 image-build/run/describe actions plus read access to the
+  `ctech-ec2-agent` SSM paths and its S3 prefix. Never `ctech-gha-infra`
+  (`AdministratorAccess`) — Packer's `amazon-ebs` builder does not support
+  resource-level scoping for most of its EC2 control-plane calls, so this role
+  is broad within EC2 but touches nothing outside it.
+- `ctech-ec2-agent` (`assets/ctech-ec2-agent/`, Go, `CGO_ENABLED=0`,
+  `GOOS=linux GOARCH=arm64`) replaces both `aws-cli` and the CloudWatch Agent
+  on the Alpine image — neither has a working Alpine/musl package. Built by CI
+  (`.github/workflows/ctech-cdk.yml`) before every `cdk diff`/`cdk deploy`,
+  since `Ec2ScriptsStack` hashes its `dist/` output as an S3 asset. Subcommands:
+  `ssm-get`, `ssm-put`, `prefix-list`, `route53-upsert`, `s3-cp`, `s3-head`,
+  `logs-tail` (the one genuinely new piece — tails files, survives log
+  rotation by inode, batches, ships to CloudWatch Logs; no metrics, per the
+  spec's non-goals).
 
 ## Documentation policy
 
