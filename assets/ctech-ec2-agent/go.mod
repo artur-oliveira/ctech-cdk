@@ -5,6 +5,8 @@ go 1.26.5
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.38
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.322.0
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.9
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.7
 )
 

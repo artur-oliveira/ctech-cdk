@@ -20,6 +20,10 @@ func main() {
 		err = runSSMGet(ctx, args)
 	case "ssm-put":
 		err = runSSMPut(ctx, args)
+	case "prefix-list":
+		err = runPrefixList(ctx, args)
+	case "route53-upsert":
+		err = runRoute53Upsert(ctx, args)
 	default:
 		err = fmt.Errorf("unknown subcommand %q", cmd)
 	}
