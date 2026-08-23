@@ -1,0 +1,67 @@
+name: Build Alpine AMI
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment whose ctech-ec2-agent build to bake in (dev, stage, prod)'
+        required: true
+        default: 'dev'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Packer build
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::868899309401:role/ctech-gha-packer
+          aws-region: us-east-1
+
+      - name: Resolve ctech-ec2-agent location
+        id: agent
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          BUCKET=$(aws ssm get-parameter --name "/ctech/${TARGET_ENV}/ctech-ec2-agent/bucket" --query Parameter.Value --output text)
+          VERSION=$(aws ssm get-parameter --name "/ctech/${TARGET_ENV}/ctech-ec2-agent/version" --query Parameter.Value --output text)
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download ctech-ec2-agent
+        run: |
+          aws s3 cp "s3://${{ steps.agent.outputs.bucket }}/${{ steps.agent.outputs.version }}/ctech-ec2-agent" ./packer/ctech-ec2-agent
+          chmod +x ./packer/ctech-ec2-agent
+
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: latest
+
+      - name: Packer init
+        working-directory: packer
+        run: packer init alpine-arm64.pkr.hcl
+
+      - name: Packer build
+        id: build
+        working-directory: packer
+        run: |
+          packer build -machine-readable alpine-arm64.pkr.hcl | tee build.log
+          AMI_ID=$(grep 'artifact,0,id' build.log | tail -1 | cut -d, -f6 | cut -d: -f2)
+          echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Publish AMI id to SSM
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          AMI_ID: ${{ steps.build.outputs.ami_id }}
+        run: |
+          aws ssm put-parameter \
+            --name "/ctech/${TARGET_ENV}/ami/alpine/arm64" \
+            --value "$AMI_ID" \
+            --type String --overwrite
