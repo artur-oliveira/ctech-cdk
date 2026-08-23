@@ -15,7 +15,6 @@ variable "region" {
 source "amazon-ebs" "alpine_arm64" {
   region          = var.region
   instance_type   = "t4g.nano"
-  name            = "ctech-alpine-arm64"
   ami_name = "ctech-alpine-arm64-{{timestamp}}"
   # AWS AMI descriptions reject non-ASCII characters (no em dash).
   ami_description = "CTech Alpine ARM64 base image - amazon-ssm-agent + ctech-ec2-agent, no aws-cli, no CloudWatch Agent"
