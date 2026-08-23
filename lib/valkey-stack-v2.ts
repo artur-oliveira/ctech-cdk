@@ -96,8 +96,10 @@ export class ValkeyStackV2 extends cdk.Stack {
       `CTECH_SCRIPTS_VERSION="${scriptsVersion}"`,
       'ctech_run(){ s=$1; shift; ctech-ec2-agent s3-cp -bucket "$CTECH_SCRIPTS_BUCKET" -key "$CTECH_SCRIPTS_VERSION/$s" -dest "/tmp/$s"; bash "/tmp/$s" "$@"; }',
 
-      'ctech_run setup-base.sh valkey valkey valkey-openrc',
+      // Dualstack SSM config first: gives out-of-band SSM access to debug
+      // anything that fails below, instead of losing both at once.
       'ctech_run setup-dualstack.sh',
+      'ctech_run setup-base.sh valkey valkey valkey-openrc',
 
       `cat > /etc/valkey/valkey.conf << 'VALKEYCONF'`,
       'bind 0.0.0.0 ::',

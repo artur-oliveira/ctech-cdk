@@ -28,5 +28,11 @@ start() {
 		chmod +x "$dest"
 		"$dest" >/var/log/ctech-userdata.log 2>&1 || rc=$?
 	fi
+	# Dumped to the console unconditionally: with no SSM connectivity yet
+	# (this script is what fixes that), the serial console is the only way
+	# to see why user-data failed.
+	echo "--- ctech-userdata log (exit $rc) ---"
+	cat /var/log/ctech-userdata.log 2>/dev/null
+	echo "--- end ctech-userdata log ---"
 	eend "$rc"
 }
