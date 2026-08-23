@@ -12,11 +12,6 @@ variable "region" {
   default = "us-east-1"
 }
 
-variable "ctech_ec2_agent_source" {
-  type        = string
-  description = "s3://bucket/key of the ctech-ec2-agent binary to bake in, read from SSM by the calling workflow"
-}
-
 source "amazon-ebs" "alpine_arm64" {
   region        = var.region
   instance_type = "t4g.nano"
