@@ -10,9 +10,10 @@
 # service: they need the exec bit too, and a zip does not carry it reliably.
 #
 # No argument here selects zero-downtime rolling deploy — it is auto-detected
-# at deploy time from /opt/app/alt-port, written by setup-app-service.sh's own
-# alt-port argument. Instances without that file get the traditional single
-# restart; instances with it roll app then app2, health-gating each in turn.
+# at deploy time from /opt/app/alt-port (setup-app-service.sh's alt-port
+# argument) and /opt/app/app-port (setup-nginx.sh's app-port-alt argument).
+# Instances without those files get the traditional single restart; instances
+# with them roll app then app2, health-gating each directly on its own port.
 set -euo pipefail
 
 BUCKET="${1:?setup-deploy.sh: deployments bucket required}"
@@ -60,12 +61,16 @@ restart_and_wait() {
 }
 
 if [ -f /opt/app/alt-port ]; then
-  # Rolling: app then app2, one at a time. nginx round-robins across both
-  # ports, so the instance keeps serving from whichever unit is still up.
+  # Rolling: app then app2, one at a time. Gate each directly on its own
+  # port, never through nginx — nginx round-robins, so it would keep
+  # answering from whichever unit is still up and mask the one that just
+  # restarted. __HEALTH_URL__ may point at nginx (the company convention);
+  # only its path is reused here, not its host:port.
+  APP_PORT="$(cat /opt/app/app-port)"
   ALT_PORT="$(cat /opt/app/alt-port)"
-  ALT_HEALTH_URL="$(echo "__HEALTH_URL__" | sed -E "s/:[0-9]+/:${ALT_PORT}/")"
-  restart_and_wait app "__HEALTH_URL__"
-  restart_and_wait app2 "$ALT_HEALTH_URL"
+  HEALTH_PATH="$(echo "__HEALTH_URL__" | sed -E 's#^[a-z]+://[^/]+##')"
+  restart_and_wait app "http://127.0.0.1:${APP_PORT}${HEALTH_PATH}"
+  restart_and_wait app2 "http://127.0.0.1:${ALT_PORT}${HEALTH_PATH}"
 else
   restart_and_wait app "__HEALTH_URL__"
 fi

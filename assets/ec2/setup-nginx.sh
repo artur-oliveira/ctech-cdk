@@ -181,6 +181,12 @@ sed -i \
 # flag needed for a 50/50 split across app-port and app-port-alt.
 if [ -n "$APP_PORT_ALT" ]; then
   sed -i "s|__APP_PORT_ALT_LINE__|        server 127.0.0.1:${APP_PORT_ALT};|" /etc/nginx/nginx.conf
+  # Read by deploy.sh's rolling path so it can health-gate each unit on its
+  # own port directly, instead of through nginx — nginx would keep answering
+  # from whichever unit is still up and mask the one that just restarted.
+  # setup-app-service.sh normally creates /opt/app; it may not have run yet.
+  mkdir -p /opt/app
+  echo "$APP_PORT" > /opt/app/app-port
 else
   sed -i "/__APP_PORT_ALT_LINE__/d" /etc/nginx/nginx.conf
 fi

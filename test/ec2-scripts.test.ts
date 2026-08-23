@@ -88,6 +88,7 @@ test('setup-nginx.sh only adds the second upstream server when app-port-alt is s
   assert.match(body, /if \[ -n "\$APP_PORT_ALT" \]; then/);
   assert.match(body, /server 127\.0\.0\.1:\$\{APP_PORT_ALT\};/);
   assert.match(body, /sed -i "\/__APP_PORT_ALT_LINE__\/d" \/etc\/nginx\/nginx\.conf/);
+  assert.match(body, /echo "\$APP_PORT" > \/opt\/app\/app-port/);
 });
 
 test('setup-ssm-env.sh rejects an argument that is not VAR=/path', () => {
@@ -137,11 +138,12 @@ test('setup-deploy.sh keeps the health-gated release swap', () => {
   assert.match(body, /tail -n \+2 \| xargs rm -rf/, 'must prune all but the live release');
 });
 
-test('setup-deploy.sh rolls app then app2 only when /opt/app/alt-port exists', () => {
+test('setup-deploy.sh rolls app then app2 only when /opt/app/alt-port exists, gating each on its own port', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
   assert.match(body, /if \[ -f \/opt\/app\/alt-port \]; then/);
-  assert.match(body, /restart_and_wait app "__HEALTH_URL__"/);
-  assert.match(body, /restart_and_wait app2 "\$ALT_HEALTH_URL"/);
+  assert.match(body, /APP_PORT="\$\(cat \/opt\/app\/app-port\)"/);
+  assert.match(body, /restart_and_wait app "http:\/\/127\.0\.0\.1:\$\{APP_PORT\}\$\{HEALTH_PATH\}"/);
+  assert.match(body, /restart_and_wait app2 "http:\/\/127\.0\.0\.1:\$\{ALT_PORT\}\$\{HEALTH_PATH\}"/);
 });
 
 test('setup-logs.sh never fails the logrotate run', () => {
