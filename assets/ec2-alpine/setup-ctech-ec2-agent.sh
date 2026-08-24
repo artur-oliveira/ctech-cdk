@@ -24,6 +24,15 @@ test -s "$CONFIG" || { echo "setup-ctech-ec2-agent.sh: $CONFIG is missing or emp
 mkdir -p /etc/ctech-ec2-agent /var/lib/ctech-ec2-agent
 install -m 0644 "$CONFIG" "$CONFIG_DEST"
 
+# openrc-run sources /etc/conf.d/$RC_SVCNAME, which is this service's own
+# suffixed name — setup-dualstack.sh's /etc/conf.d/ctech-ec2-agent never
+# matches a suffixed service, so AWS_USE_DUALSTACK_ENDPOINT must be set here
+# per service instead. Without it, these instances (no public IPv4) can't
+# reach the CloudWatch Logs API and logs-tail hangs then crash-loops.
+cat > "/etc/conf.d/$SERVICE_NAME" << 'CONF'
+export AWS_USE_DUALSTACK_ENDPOINT=true
+CONF
+
 cat > "/etc/init.d/$SERVICE_NAME" << SVC
 #!/sbin/openrc-run
 description="ctech-ec2-agent logs-tail ($SERVICE_NAME)"
