@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -100,4 +101,64 @@ func runSSMPut(ctx context.Context, argv []string) error {
 		return fmt.Errorf("put parameter %q: %w", args.name, err)
 	}
 	return nil
+}
+
+type ssmGetByPathArgs struct {
+	path    string
+	decrypt bool
+}
+
+func parseSSMGetByPathArgs(args []string) (ssmGetByPathArgs, error) {
+	fs := flag.NewFlagSet("ssm-get-by-path", flag.ContinueOnError)
+	path := fs.String("path", "", "SSM parameter path prefix")
+	decrypt := fs.Bool("decrypt", true, "decrypt SecureString parameters")
+	if err := fs.Parse(args); err != nil {
+		return ssmGetByPathArgs{}, err
+	}
+	if *path == "" {
+		return ssmGetByPathArgs{}, fmt.Errorf("-path is required")
+	}
+	return ssmGetByPathArgs{path: *path, decrypt: *decrypt}, nil
+}
+
+type ssmParameterOutput struct {
+	Name  string `json:"Name"`
+	Value string `json:"Value"`
+}
+
+type ssmParametersByPathOutput struct {
+	Parameters []ssmParameterOutput `json:"Parameters"`
+}
+
+// runSSMGetByPath mirrors `aws ssm get-parameters-by-path --recursive --output
+// json`'s top-level shape exactly, so reconcile-alpine.sh.tftpl's jq filter
+// needs no change from reconcile.sh.tftpl's.
+func runSSMGetByPath(ctx context.Context, argv []string) error {
+	args, err := parseSSMGetByPathArgs(argv)
+	if err != nil {
+		return err
+	}
+	client, err := newSSMClient(ctx)
+	if err != nil {
+		return err
+	}
+	out := ssmParametersByPathOutput{Parameters: []ssmParameterOutput{}}
+	paginator := ssm.NewGetParametersByPathPaginator(client, &ssm.GetParametersByPathInput{
+		Path:           aws.String(args.path),
+		Recursive:      aws.Bool(true),
+		WithDecryption: aws.Bool(args.decrypt),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("get parameters by path %q: %w", args.path, err)
+		}
+		for _, p := range page.Parameters {
+			out.Parameters = append(out.Parameters, ssmParameterOutput{
+				Name:  aws.ToString(p.Name),
+				Value: aws.ToString(p.Value),
+			})
+		}
+	}
+	return json.NewEncoder(os.Stdout).Encode(out)
 }

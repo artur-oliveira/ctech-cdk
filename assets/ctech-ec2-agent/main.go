@@ -23,6 +23,8 @@ func main() {
 		err = runSSMGet(ctx, args)
 	case "ssm-put":
 		err = runSSMPut(ctx, args)
+	case "ssm-get-by-path":
+		err = runSSMGetByPath(ctx, args)
 	case "prefix-list":
 		err = runPrefixList(ctx, args)
 	case "route53-upsert":
