@@ -20,7 +20,7 @@ cat > /opt/app/start.sh << 'START'
 # belongs in /opt/app/service-env.sh.
 if [ -f /etc/app-static.env ]; then set -a; . /etc/app-static.env; set +a; fi
 if [ -f /opt/app/current/release.env ]; then set -a; . /opt/app/current/release.env; set +a; fi
-if [ -f /opt/app/load-ssm-env.sh ]; then . /opt/app/load-ssm-env.sh; fi
+if [ -f /opt/app/load-ssm-env.sh ]; then set -a; . /opt/app/load-ssm-env.sh; set +a; fi
 if [ -f /opt/app/service-env.sh ]; then . /opt/app/service-env.sh; fi
 if [ -n "${PORT_OVERRIDE:-}" ]; then PORT="$PORT_OVERRIDE"; export PORT; fi
 exec /opt/app/current/__BINARY__
