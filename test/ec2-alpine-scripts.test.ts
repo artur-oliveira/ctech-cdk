@@ -52,8 +52,9 @@ test('setup-dualstack.sh writes OpenRC conf.d, not a systemd override', () => {
 test('setup-ctech-ec2-agent.sh installs the binary and starts the logs-tail service', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-ctech-ec2-agent.sh'), 'utf8');
   assert.match(body, /CONFIG="\$\{1:\?/, 'logs-tail config path must be a required argument');
-  assert.match(body, /rc-update add ctech-ec2-agent-logs default/);
-  assert.match(body, /rc-service ctech-ec2-agent-logs start/);
+  assert.match(body, /SERVICE_NAME="ctech-ec2-agent-logs\$\{SUFFIX:\+-\$SUFFIX\}"/, 'must default to the original single-service name when no suffix is given');
+  assert.match(body, /rc-update add "\$SERVICE_NAME" default/);
+  assert.match(body, /rc-service "\$SERVICE_NAME" start/);
 });
 
 test('setup-nginx.sh keeps both extension points and never double-includes realip', () => {
@@ -98,6 +99,20 @@ test('bootstrap-deploy.sh calls ctech-ec2-agent s3-head, not the AWS CLI', () =>
   const body = readFileSync(path.join(ASSETS_DIR, 'bootstrap-deploy.sh'), 'utf8');
   assert.match(body, /ctech-ec2-agent s3-head/);
   assert.doesNotMatch(body, /s3api head-object/);
+});
+
+test('setup-swap.sh is idempotent and never calls the AWS CLI', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-swap.sh'), 'utf8');
+  assert.match(body, /SIZE_MB="\$\{1:-256\}"/);
+  assert.match(body, /if \[ -f \/var\/swapfile \]; then/);
+  assert.match(body, /mkswap \/var\/swapfile/);
+});
+
+test('setup-logs.sh calls ctech-ec2-agent s3-put, not the AWS CLI', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-logs.sh'), 'utf8');
+  assert.match(body, /LOGS_BUCKET="\$\{1:\?/);
+  assert.match(body, /ctech-ec2-agent s3-put -bucket __LOGS_BUCKET__ -key/);
+  assert.doesNotMatch(body, /aws s3 cp/);
 });
 
 test('SSM path helpers used to publish this bucket exist', () => {
