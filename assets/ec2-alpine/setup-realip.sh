@@ -33,12 +33,15 @@ fi
 } > "$TMP"
 install -m 644 "$TMP" "$CONF"
 rm -f "$TMP"
-if ! nginx -t 2>/dev/null; then
-  echo "nginx rejected the generated realip.conf — reverting" >&2
-  rm -f "$CONF"
-  exit 1
-fi
-if rc-service nginx status >/dev/null 2>&1; then
+# nginx -t here validates the WHOLE current nginx.conf, not just this file.
+# Called from userData, this runs before setup-nginx.sh has written the real
+# nginx.conf — at that point nginx -t is testing Alpine's stock config, which
+# (unlike AL2023's RPM) does not include conf.d/*.conf by default, so it
+# always fails on first boot. Keep the file regardless: setup-nginx.sh's own
+# nginx -t (run after, against the real config) is what actually validates
+# it, and only reload here when nginx is already up with a config that
+# accepts it — never delete it back out.
+if nginx -t 2>/dev/null && rc-service nginx status >/dev/null 2>&1; then
   rc-service nginx reload
 fi
 REALIP
