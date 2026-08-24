@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.38
+	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.72.2
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.82.3
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.322.0
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.9
