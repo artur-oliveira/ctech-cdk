@@ -31,7 +31,7 @@ export function addCloudflareOriginCaCommandsAlpine(userData: ec2.UserData): voi
     '  command -v curl >/dev/null || apk add --no-cache curl',
     '  command -v openssl >/dev/null || apk add --no-cache openssl',
     '  install -d -m 0755 /usr/local/share/ca-certificates',
-    '  CF_ORIGIN_CA_TMP="$(mktemp /tmp/cloudflare-origin-ca-rsa.XXXXXX.pem)"',
+    '  CF_ORIGIN_CA_TMP="$(mktemp /tmp/cloudflare-origin-ca-rsa.XXXXXX)"',
     `  trap 'rm -f "$CF_ORIGIN_CA_TMP"' EXIT`,
     `  curl --fail --silent --show-error --location --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 "${CLOUDFLARE_ORIGIN_CA_RSA_URL}" --output "$CF_ORIGIN_CA_TMP"`,
     `  echo "${CLOUDFLARE_ORIGIN_CA_RSA_SHA256}  $CF_ORIGIN_CA_TMP" | sha256sum -c -`,

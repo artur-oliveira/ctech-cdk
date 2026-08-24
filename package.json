@@ -1,6 +1,6 @@
 {
   "name": "@aoctech/cdk",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Shared AWS CDK constructs and utilities for CTech EC2 services, HAProxy discovery, and static frontends.",
   "repository": {
     "type": "git",
