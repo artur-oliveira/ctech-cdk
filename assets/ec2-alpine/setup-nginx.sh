@@ -17,7 +17,12 @@ mkdir -p /etc/nginx/conf.d
 
 cat > /etc/nginx/nginx.conf << 'NGINX'
 user nginx;
-pid /run/nginx.pid;
+# Must match nginx-openrc's own pidfile= (/run/nginx/nginx.pid), not nginx's
+# compiled-in default (/run/nginx.pid) — a mismatch here means `rc-service
+# nginx reload/stop` signals a pidfile that never gets written, so
+# start-stop-daemon finds nothing and every reload silently no-ops (config
+# changes, e.g. realip.conf, only ever take effect after a full restart).
+pid /run/nginx/nginx.pid;
 worker_processes auto;
 worker_rlimit_nofile 65535;
 error_log /var/log/nginx/error.log warn;
