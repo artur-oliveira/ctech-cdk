@@ -87,3 +87,43 @@ func runASGDescribe(ctx context.Context, argv []string) error {
 	}
 	return json.NewEncoder(os.Stdout).Encode(out)
 }
+
+type asgSetUnhealthyArgs struct {
+	instanceID string
+}
+
+func parseASGSetUnhealthyArgs(argv []string) (asgSetUnhealthyArgs, error) {
+	fs := flag.NewFlagSet("asg-set-unhealthy", flag.ContinueOnError)
+	instanceID := fs.String("instance-id", "", "instance id to mark Unhealthy")
+	if err := fs.Parse(argv); err != nil {
+		return asgSetUnhealthyArgs{}, err
+	}
+	if *instanceID == "" {
+		return asgSetUnhealthyArgs{}, fmt.Errorf("-instance-id is required")
+	}
+	return asgSetUnhealthyArgs{instanceID: *instanceID}, nil
+}
+
+// runASGSetUnhealthy always respects the ASG's health-check grace period —
+// reconcile.sh's own auto-heal logic already waits out a 3-minute launch
+// guard (`$((now - launched)) -ge 180`) before ever calling this, so a second
+// grace period here only ever adds delay, never skips the check.
+func runASGSetUnhealthy(ctx context.Context, argv []string) error {
+	args, err := parseASGSetUnhealthyArgs(argv)
+	if err != nil {
+		return err
+	}
+	client, err := newASGClient(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = client.SetInstanceHealth(ctx, &autoscaling.SetInstanceHealthInput{
+		InstanceId:               aws.String(args.instanceID),
+		HealthStatus:             aws.String("Unhealthy"),
+		ShouldRespectGracePeriod: aws.Bool(true),
+	})
+	if err != nil {
+		return fmt.Errorf("set instance %s unhealthy: %w", args.instanceID, err)
+	}
+	return nil
+}

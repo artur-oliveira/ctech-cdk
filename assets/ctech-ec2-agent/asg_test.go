@@ -18,3 +18,9 @@ func TestParseASGDescribeArgsSplitsOnComma(t *testing.T) {
 		t.Fatalf("names = %v, want %v", args.names, want)
 	}
 }
+
+func TestParseASGSetUnhealthyArgsRequiresInstanceID(t *testing.T) {
+	if _, err := parseASGSetUnhealthyArgs([]string{}); err == nil {
+		t.Fatal("expected an error when -instance-id is missing")
+	}
+}
