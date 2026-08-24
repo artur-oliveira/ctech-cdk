@@ -27,6 +27,8 @@ func main() {
 		err = runSSMGetByPath(ctx, args)
 	case "asg-describe":
 		err = runASGDescribe(ctx, args)
+	case "ec2-describe-instances":
+		err = runEC2DescribeInstances(ctx, args)
 	case "prefix-list":
 		err = runPrefixList(ctx, args)
 	case "route53-upsert":
