@@ -50,7 +50,7 @@ jobs:
         working-directory: assets/ctech-ec2-agent
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/ctech-ec2-agent .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/ctech-ec2-agent .
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -113,7 +113,7 @@ jobs:
         working-directory: assets/ctech-ec2-agent
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/ctech-ec2-agent .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/ctech-ec2-agent .
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
