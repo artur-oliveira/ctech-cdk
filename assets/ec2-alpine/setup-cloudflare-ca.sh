@@ -17,7 +17,7 @@ apk add --no-cache ca-certificates
 
 install -d -m 0755 /usr/local/share/ca-certificates
 
-TMP="$(mktemp /tmp/cloudflare-origin-ca-rsa.XXXXXX.pem)"
+TMP="$(mktemp /tmp/cloudflare-origin-ca-rsa.XXXXXX)"
 trap 'rm -f "$TMP"' EXIT
 
 curl --fail --silent --show-error --location \
