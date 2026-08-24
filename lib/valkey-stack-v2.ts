@@ -56,10 +56,6 @@ export class ValkeyStackV2 extends cdk.Stack {
       actions: ['ssm:PutParameter'],
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${this.urlSsmPath}`],
     }));
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:/ctech/${environment}/valkey:*`],
-    }));
     if (privateHostedZone) {
       role.addToPolicy(new iam.PolicyStatement({
         actions: ['route53:ChangeResourceRecordSets'],
@@ -77,6 +73,16 @@ export class ValkeyStackV2 extends cdk.Stack {
       retention: isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
       removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      // logGroup.logGroupArn, not a hand-built string: a literal
+      // "/ctech/{env}/valkey:*" ARN silently stopped matching once the
+      // log group was renamed to "valkey-v2" (confirmed live — logs-tail
+      // never shipped anything to CloudWatch, only ever wrote the local
+      // file, no AccessDenied surfaced anywhere visible since the OpenRC
+      // service just retries quietly).
+      resources: [`${logGroup.logGroupArn}:*`],
+    }));
 
     const scriptsBucket = ssm.StringParameter.valueForStringParameter(this, SSM.ec2ScriptsAlpine(environment).bucket);
     const scriptsVersion = ssm.StringParameter.valueForStringParameter(this, SSM.ec2ScriptsAlpine(environment).version);
