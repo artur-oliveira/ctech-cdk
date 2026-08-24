@@ -31,6 +31,8 @@ func main() {
 		err = runEC2DescribeInstances(ctx, args)
 	case "asg-set-unhealthy":
 		err = runASGSetUnhealthy(ctx, args)
+	case "s3-put":
+		err = runS3Put(ctx, args)
 	case "prefix-list":
 		err = runPrefixList(ctx, args)
 	case "route53-upsert":

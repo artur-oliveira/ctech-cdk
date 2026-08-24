@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
@@ -113,6 +114,55 @@ func runS3Head(ctx context.Context, argv []string) error {
 			return errNotFound
 		}
 		return fmt.Errorf("head s3://%s/%s: %w", args.bucket, args.key, err)
+	}
+	return nil
+}
+
+type s3PutArgs struct {
+	bucket, key, file string
+}
+
+func parseS3PutArgs(argv []string) (s3PutArgs, error) {
+	fs := flag.NewFlagSet("s3-put", flag.ContinueOnError)
+	bucket := fs.String("bucket", "", "destination bucket")
+	key := fs.String("key", "", "destination object key")
+	file := fs.String("file", "", "local source file")
+	if err := fs.Parse(argv); err != nil {
+		return s3PutArgs{}, err
+	}
+	if *bucket == "" || *key == "" || *file == "" {
+		return s3PutArgs{}, fmt.Errorf("-bucket, -key and -file are required")
+	}
+	return s3PutArgs{bucket: *bucket, key: *key, file: *file}, nil
+}
+
+// runS3Put always requests a SHA-256 checksum: this exists specifically for
+// bootstrap-alpine.sh.tftpl's HAProxy artifact cache, which is keyed by its
+// SHA-256 digest — the same reason the AL2023 script's aws s3api put-object
+// call always passes --checksum-algorithm SHA256.
+func runS3Put(ctx context.Context, argv []string) error {
+	args, err := parseS3PutArgs(argv)
+	if err != nil {
+		return err
+	}
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(args.file)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", args.file, err)
+	}
+	defer f.Close()
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:            aws.String(args.bucket),
+		Key:               aws.String(args.key),
+		Body:              f,
+		ChecksumAlgorithm: s3types.ChecksumAlgorithmSha256,
+	})
+	if err != nil {
+		return fmt.Errorf("put s3://%s/%s: %w", args.bucket, args.key, err)
 	}
 	return nil
 }
