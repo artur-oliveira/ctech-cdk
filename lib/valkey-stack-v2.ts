@@ -114,6 +114,12 @@ export class ValkeyStackV2 extends cdk.Stack {
     );
     addSwapCommands(userData, 256);
     userData.addCommands(
+      // Raise the fd limit for the OpenRC service so maxclients=10000 works.
+      'mkdir -p /etc/conf.d',
+      'cat > /etc/conf.d/valkey << \'EOF\'',
+      'rc_ulimit="-n 16256"',
+      'EOF',
+
       `cat > /etc/valkey/valkey.conf << 'VALKEYCONF'`,
       'bind 0.0.0.0 ::',
       'protected-mode no',
