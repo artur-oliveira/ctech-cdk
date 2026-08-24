@@ -206,7 +206,12 @@ but commented out in `bin/ctech-cdk.ts`.
   `ssm-get`, `ssm-put`, `prefix-list`, `route53-upsert`, `s3-cp`, `s3-head`,
   `logs-tail` (the one genuinely new piece — tails files, survives log
   rotation by inode, batches, ships to CloudWatch Logs; no metrics, per the
-  spec's non-goals).
+  spec's non-goals), plus `ssm-get-by-path`, `asg-describe`,
+  `ec2-describe-instances`, `asg-set-unhealthy`, `s3-put` (added for
+  `ctech-lbalancer`'s own Alpine migration — a separate repo, see its
+  `docs/plans/2026-08-23-alpine-lbalancer-migration.md` — each a
+  straight subcommand-per-operation port of one `aws-cli` call its
+  `reconcile`/`bootstrap` scripts already made).
 
 ## Documentation policy
 
