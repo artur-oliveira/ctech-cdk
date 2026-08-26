@@ -105,6 +105,7 @@ export interface HaproxyEc2ServiceProps {
   asgName: string;
   minCapacity: number;
   maxCapacity: number;
+  enableCpuAutoScaling?: boolean;
   desiredCapacity?: number;
   instanceType?: ec2.InstanceType;
   machineImage?: ec2.IMachineImage;
@@ -245,7 +246,7 @@ export class HaproxyEc2Service extends Construct {
         gracePeriod: props.healthGracePeriod ?? cdk.Duration.seconds(120),
       }),
     });
-    if (props.maxCapacity > props.minCapacity) {
+    if (props.maxCapacity > props.minCapacity && props.enableCpuAutoScaling) {
       this.autoScalingGroup.scaleOnCpuUtilization('CpuTargetTracking', {
         targetUtilizationPercent: props.cpuTargetUtilizationPercent ?? 60,
         cooldown: cdk.Duration.minutes(3),
