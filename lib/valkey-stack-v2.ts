@@ -237,12 +237,15 @@ export class ValkeyStackV2 extends cdk.Stack {
       },
       capacityRebalance: true,
       minCapacity: isProd ? 1 : 0,
-      maxCapacity: 1,
+      // +1 over the highest minCapacity: gives CapacityRebalance headroom to
+      // launch the replacement before terminating the spot-interrupted
+      // instance instead of waiting for it to go down first.
+      maxCapacity: 2,
       cooldown: cdk.Duration.minutes(5),
     });
 
     if (props.schedule) {
-      addAsgSchedule(asg, {minCapacity: isProd ? 1 : 0, maxCapacity: 1}, props.schedule);
+      addAsgSchedule(asg, {minCapacity: isProd ? 1 : 0, maxCapacity: 2}, props.schedule);
     }
 
     new ssm.StringParameter(this, 'ValkeyUrlPlaceholder', {

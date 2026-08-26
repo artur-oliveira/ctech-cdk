@@ -56,6 +56,6 @@ test('keeps one instance in prod, matching ValkeyStack today', () => {
   const {template} = synth();
   template.hasResourceProperties('AWS::AutoScaling::AutoScalingGroup', {
     MinSize: '1',
-    MaxSize: '1',
+    MaxSize: '2',
   });
 });
