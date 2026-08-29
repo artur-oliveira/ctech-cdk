@@ -31,3 +31,4 @@ export {
   DEFAULT_ASG_SCHEDULE,
   addAsgSchedule,
 } from './haproxy-ec2-service';
+export {AlertsStack, AlertsStackProps} from './alerts-stack';

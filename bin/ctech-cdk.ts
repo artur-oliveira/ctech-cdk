@@ -8,6 +8,7 @@ import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
 import {ValkeyStackV2} from "../lib/valkey-stack-v2";
+import {AlertsStack} from "../lib/alerts-stack";
 import {ValkeyStack} from "../lib/valkey-stack";
 
 const app = new cdk.App();
@@ -56,6 +57,26 @@ new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
   environment: ENVIRONMENT,
   description: `CTech Shared S3 Buckets (deployments + logs) - ${ENVIRONMENT}`,
 });
+
+// =====================
+// The account's alert channel. Every service publishes its own failures here
+// instead of paying for a CloudWatch alarm per thing that can go wrong.
+//
+// ALERT_EMAIL is required and has no default: an address baked into source is
+// an address nobody notices is wrong, and a topic with no subscriber is an
+// alert that publishes successfully into nothing. Deploy with
+// `ALERT_EMAIL=you@example.com ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Alerts`,
+// then confirm the subscription from the e-mail AWS sends.
+// =====================
+const ALERT_EMAIL = process.env.ALERT_EMAIL;
+if (ALERT_EMAIL) {
+  new AlertsStack(app, `Ctech-${cap(ENVIRONMENT)}-Alerts`, {
+    env,
+    environment: ENVIRONMENT,
+    alertEmail: ALERT_EMAIL,
+    description: `CTech Alert Topic - ${ENVIRONMENT}`,
+  });
+}
 
 // =====================
 // Shared EC2 bootstrap scripts (consumed by every service CDK and by the

@@ -34,6 +34,9 @@ export interface SSMParams {
     bucket: string;
     version: string;
   };
+  alerts: (env: Environment) => {
+    topicArn: string;
+  };
   ctechEc2Agent: (env: Environment) => {
     bucket: string;
     version: string;

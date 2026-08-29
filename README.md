@@ -88,6 +88,7 @@ configuration, and updates the Cloudflare origin AAAA record.
 | `/ctech/{env}/valkey/url` | Cache base URL (now Dragonfly); consumers append their DB number |
 | `/ctech/{env}/ec2-scripts/bucket` | Bucket holding the shared EC2 bootstrap scripts |
 | `/ctech/{env}/ec2-scripts/version` | Content hash of `assets/ec2`, and the S3 key prefix the scripts live under |
+| `/ctech/{env}/alerts/topic-arn` | Shared alert topic every service publishes its own failures to |
 
 `SSM.alb(env)` remains exported for compatibility with legacy ALB code, but
 the current entrypoint does not deploy `AlbStack` and therefore does not write
@@ -179,6 +180,31 @@ URL, and Poker's private Wallet URL. It deliberately does not overwrite ctech-ac
 `base-url`/`app-url`: those values participate in OAuth issuer and redirect
 contracts and must remain public. Dev/stage private URLs require their VPC to
 be associated with the private hosted zone before use.
+
+## Alerts
+
+One SNS topic per environment, `ctech-{env}-alerts`, with a single confirmed
+e-mail subscription. Every service publishes its own failures to it through
+`gopkg.aoctech.app/api-commons/alerts`, reading the ARN from
+`/ctech/{env}/alerts/topic-arn`.
+
+Deliberately not CloudWatch: an alarm is billed per alarm per month and the
+family would need dozens of them to say the one thing that matters — "this job
+did not do its work" — which every job already knows at the moment it happens.
+SNS e-mail is free for the first thousand notifications a month, well past the
+volume at which anybody would stop reading them.
+
+What it does not buy is liveness. A process that never runs publishes nothing,
+and silence here reads exactly like health, so a service that needs "did it run
+at all" has to assert it from the next run rather than from a metric.
+
+```bash
+ALERT_EMAIL=you@example.com ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Alerts
+```
+
+The stack is skipped entirely when `ALERT_EMAIL` is unset — an address baked
+into source is one nobody notices is wrong. AWS sends a confirmation e-mail on
+first deploy and the subscription delivers nothing until it is accepted.
 
 ## Shared cache (Dragonfly)
 

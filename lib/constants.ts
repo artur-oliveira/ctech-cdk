@@ -50,6 +50,11 @@ export const SSM = {
     version: `/ctech/${env}/ec2-scripts-alpine/version`,
   }),
   // Same pattern again, for the compiled ctech-ec2-agent binary.
+  // The account's alert channel (AlertsStack). Read by every service that has
+  // something to report a failure about, Terraform roots included.
+  alerts: (env: string) => ({
+    topicArn: `/ctech/${env}/alerts/topic-arn`,
+  }),
   ctechEc2Agent: (env: string) => ({
     bucket: `/ctech/${env}/ctech-ec2-agent/bucket`,
     version: `/ctech/${env}/ctech-ec2-agent/version`,
