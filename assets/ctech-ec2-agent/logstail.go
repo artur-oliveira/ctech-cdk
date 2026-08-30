@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -158,20 +159,60 @@ func flush(ctx context.Context, client *cloudwatchlogs.Client, logGroup, stream 
 	if len(lines) == 0 {
 		return nil
 	}
-	events := make([]cwltypes.InputLogEvent, 0, len(lines))
-	now := time.Now().UnixMilli()
-	for _, line := range lines {
-		events = append(events, cwltypes.InputLogEvent{
-			Message:   aws.String(line),
-			Timestamp: aws.Int64(now),
-		})
+	events := buildLogEvents(lines, time.Now().UnixMilli())
+	if len(events) == 0 {
+		return nil
 	}
 	_, err := client.PutLogEvents(ctx, &cloudwatchlogs.PutLogEventsInput{
 		LogGroupName:  aws.String(logGroup),
 		LogStreamName: aws.String(stream),
 		LogEvents:     events,
 	})
+	// A validation rejection is permanent: the same bytes will be rejected on
+	// every retry, so returning it kills the daemon and the supervisor restarts
+	// it straight back into the same batch — which is exactly how one bad line
+	// stopped a service's log shipping entirely. Drop the poison batch loudly
+	// and keep tailing; a transient error still propagates so the retry happens.
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) && permanentPutLogEventsError(apiErr.ErrorCode()) {
+		fmt.Fprintf(os.Stderr, "ctech-ec2-agent logs-tail: dropping %d unshippable events for %s/%s: %v\n",
+			len(events), logGroup, stream, err)
+		return nil
+	}
 	return err
+}
+
+// buildLogEvents turns tailed lines into a PutLogEvents batch, dropping the
+// ones the API will not accept.
+//
+// PutLogEvents rejects a zero-length message, and it rejects the WHOLE batch
+// when a single member fails validation — so one blank line in the tailed file
+// makes every other line in its batch unshippable too. Blank lines are ordinary
+// output (a framework startup banner, a lifecycle gap), so they are dropped
+// here rather than being allowed to take the batch down with them.
+func buildLogEvents(lines []string, timestamp int64) []cwltypes.InputLogEvent {
+	events := make([]cwltypes.InputLogEvent, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		events = append(events, cwltypes.InputLogEvent{
+			Message:   aws.String(line),
+			Timestamp: aws.Int64(timestamp),
+		})
+	}
+	return events
+}
+
+// permanentPutLogEventsError reports whether PutLogEvents refused the batch on
+// its contents rather than on conditions that may change.
+func permanentPutLogEventsError(code string) bool {
+	switch code {
+	case "InvalidParameterException", "DataAlreadyAcceptedException", "InvalidSequenceTokenException":
+		return true
+	default:
+		return false
+	}
 }
 
 // tailOne polls path for growth or rotation every pollInterval, batching
@@ -228,14 +269,18 @@ func tailOne(ctx context.Context, client *cloudwatchlogs.Client, logGroup, strea
 		}
 		c.Offset += read
 		f.Close()
-		if err := saveCursor(path, c); err != nil {
-			return fmt.Errorf("save cursor for %s: %w", path, err)
-		}
 
+		// Flush BEFORE persisting the cursor. The other order advanced the cursor
+		// past lines that were still sitting in the batcher, so a failed flush
+		// dropped them permanently — the crash looked survivable precisely
+		// because it silently skipped the batch it could not send.
 		if b.dueForFlush() {
 			if err := flush(ctx, client, logGroup, stream, b.drain()); err != nil {
 				return fmt.Errorf("flush %s: %w", path, err)
 			}
+		}
+		if err := saveCursor(path, c); err != nil {
+			return fmt.Errorf("save cursor for %s: %w", path, err)
 		}
 
 		time.Sleep(pollInterval)
