@@ -46,7 +46,7 @@ export function addAsgSchedule(
   schedule: AsgScheduleProps,
 ): void {
   const timeZone = schedule.timeZone ?? DEFAULT_ASG_SCHEDULE.timeZone;
-  
+
   const disabledTarget = asg.scaleOnSchedule('ScheduledDisable', {
     schedule: autoscaling.Schedule.expression(schedule.disableCron ?? DEFAULT_ASG_SCHEDULE.disableCron),
     timeZone,
@@ -54,7 +54,7 @@ export function addAsgSchedule(
     maxCapacity: 0,
     desiredCapacity: 0,
   });
-  
+
   const enabledTarget = asg.scaleOnSchedule('ScheduledEnable', {
     schedule: autoscaling.Schedule.expression(schedule.enableCron ?? DEFAULT_ASG_SCHEDULE.enableCron),
     timeZone,
@@ -62,27 +62,35 @@ export function addAsgSchedule(
     maxCapacity: capacity.maxCapacity,
     desiredCapacity: capacity.desiredCapacity ?? capacity.minCapacity,
   });
-  
+
   const cfnDisabledAction = disabledTarget.node.defaultChild as CfnScalableTarget;
   cfnDisabledAction.addPropertyOverride('ScheduledActionName', 'asg-scheduled-disable');
-  
+
   const enabledAction = enabledTarget.node.defaultChild as CfnScalableTarget;
   enabledAction.addPropertyOverride('ScheduledActionName', 'asg-scheduled-enable');
 }
 
 export interface AsgSpotProps {
   /**
+   * Instance types that the ASG may use to diversify Spot capacity.
+   * Every type must be compatible with the configured machine image.
+   *
+   * @default - Use only HaproxyEc2ServiceProps.instanceType.
+   */
+  instanceTypes?: readonly ec2.InstanceType[];
+
+  /**
    * Percentage of capacity that should use Spot.
    * Default: 100.
    */
   percentage?: number;
-  
+
   /**
    * Spot allocation strategy.
    * Default: price-capacity-optimized.
    */
   allocationStrategy?: autoscaling.SpotAllocationStrategy;
-  
+
   /**
    * Enable Capacity Rebalancing.
    * Default: true.
@@ -134,17 +142,17 @@ export class HaproxyEc2Service extends Construct {
   public readonly launchTemplate: ec2.LaunchTemplate;
   public readonly autoScalingGroup: autoscaling.AutoScalingGroup;
   public readonly routeParameter?: ssm.StringParameter;
-  
+
   constructor(scope: Construct, id: string, props: HaproxyEc2ServiceProps) {
     super(scope, id);
-    
+
     if (props.minCapacity < 0 || props.maxCapacity < props.minCapacity) {
       throw new Error('ASG capacity must satisfy 0 <= minCapacity <= maxCapacity');
     }
     if (props.appPort < 1 || props.appPort > 65535) {
       throw new Error('appPort must be between 1 and 65535');
     }
-    
+
     this.securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
       vpc: props.vpc,
       securityGroupName: props.securityGroupName,
@@ -157,7 +165,7 @@ export class HaproxyEc2Service extends Construct {
       ec2.Port.tcp(props.appPort),
       'CTech HAProxy edge to service',
     );
-    
+
     this.appLogGroup = new logs.LogGroup(this, 'AppLogGroup', {
       logGroupName: props.appLogGroupName,
       retention: props.logRetention,
@@ -218,20 +226,32 @@ export class HaproxyEc2Service extends Construct {
         }],
       }],
     );
-    
+
     const spotPercentage = props.spot?.percentage ?? 100;
+    if (spotPercentage < 0 || spotPercentage > 100) {
+      throw new Error('Spot percentage must be between 0 and 100');
+    }
+    if (props.spot?.instanceTypes?.length === 0) {
+      throw new Error('Spot instanceTypes must contain at least one instance type');
+    }
+    if ((props.spot?.instanceTypes?.length ?? 0) > 40) {
+      throw new Error('Spot instanceTypes cannot contain more than 40 instance types');
+    }
     const onDemandPercentageAboveBaseCapacity = 100 - spotPercentage;
-    
+
     const spotAllocationStrategy = (
       props.spot?.allocationStrategy ?? autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED
     );
-    
+
     this.autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'AutoScalingGroup', {
       autoScalingGroupName: props.asgName,
       vpc: props.vpc,
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
       mixedInstancesPolicy: {
         launchTemplate: this.launchTemplate,
+        launchTemplateOverrides: props.spot?.instanceTypes?.map((overrideInstanceType) => ({
+          instanceType: overrideInstanceType,
+        })),
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity,
           spotAllocationStrategy
@@ -252,16 +272,16 @@ export class HaproxyEc2Service extends Construct {
         cooldown: cdk.Duration.minutes(3),
       });
     }
-    
+
     if (props.schedule) {
       addAsgSchedule(this.autoScalingGroup, props, props.schedule);
     }
-    
+
     if (props.route) {
       this.routeParameter = this.createRoute(props.route, props.appPort, props.asgName);
     }
   }
-  
+
   private createRoute(
     route: HaproxyRouteRegistrationProps,
     appPort: number,
@@ -288,7 +308,7 @@ export class HaproxyEc2Service extends Construct {
         'internalHostname, privateHostedZone and internalLoadBalancerHostname must be provided together',
       );
     }
-    
+
     const parameter = new ssm.StringParameter(this, 'RouteParameter', {
       parameterName: route.parameterName,
       tier: ssm.ParameterTier.STANDARD,
@@ -303,7 +323,7 @@ export class HaproxyEc2Service extends Construct {
       }),
       description: `HAProxy route for ${route.hostname}`,
     });
-    
+
     if (hasAllPrivateDns) {
       const zone = route.privateHostedZone!;
       const suffix = `.${zone.zoneName}`;

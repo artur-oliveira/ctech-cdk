@@ -1,6 +1,6 @@
 {
   "name": "@aoctech/cdk",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Shared AWS CDK constructs and utilities for CTech EC2 services, HAProxy discovery, and static frontends.",
   "repository": {
     "type": "git",
@@ -24,15 +24,15 @@
     "cdk": "cdk"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "aws-cdk": "^2.1137.0",
-    "aws-cdk-lib": "^2.265.0",
+    "@types/node": "^26.4.1",
+    "aws-cdk": "^2.1139.0",
+    "aws-cdk-lib": "^2.268.0",
     "constructs": "^10.8.1",
     "ts-node": "^10.9.2",
     "typescript": "~6.0.3"
   },
   "peerDependencies": {
-    "aws-cdk-lib": "^2.265.0",
+    "aws-cdk-lib": "^2.268.0",
     "constructs": "^10.8.1"
   }
 }

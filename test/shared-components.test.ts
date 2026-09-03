@@ -90,6 +90,51 @@ test('HaproxyEc2Service synthesizes ASG, dual-stack launch template and route', 
   });
 });
 
+test('HaproxyEc2Service diversifies Spot capacity across configured instance types', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'SpotFixture');
+  const vpc = new ec2.Vpc(stack, 'Vpc', {natGateways: 0, maxAzs: 2});
+
+  new HaproxyEc2Service(stack, 'Service', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 3,
+    spot: {
+      instanceTypes: [
+        new ec2.InstanceType('t4g.nano'),
+        new ec2.InstanceType('t4g.micro'),
+        new ec2.InstanceType('c7g.medium'),
+      ],
+    },
+  });
+
+  Template.fromStack(stack).hasResourceProperties('AWS::AutoScaling::AutoScalingGroup', {
+    MixedInstancesPolicy: {
+      LaunchTemplate: {
+        Overrides: [
+          {InstanceType: 't4g.nano'},
+          {InstanceType: 't4g.micro'},
+          {InstanceType: 'c7g.medium'},
+        ],
+      },
+      InstancesDistribution: {
+        OnDemandPercentageAboveBaseCapacity: 0,
+        SpotAllocationStrategy: 'price-capacity-optimized',
+      },
+    },
+  });
+});
+
 test('buildCloudWatchAgentConfig emits compact JSON to conserve user data', () => {
   const config = buildCloudWatchAgentConfig({
     metricNamespace: 'CtechExample/prod/Host',

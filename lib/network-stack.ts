@@ -20,15 +20,19 @@ export class NetworkStack extends cdk.Stack {
     super(scope, id, props);
     
     const {environment} = props;
-    
+
     // Dual-stack VPC: instances use IPv6 public addresses, no public IPv4.
     this.vpc = new ec2.Vpc(this, 'Vpc', {
       vpcName: `${environment}-ctech-vpc`,
-      // maxAzs: 2,
+      // Preserve the original subnet positions (1b/1c/1d) and append the
+      // remaining pinned AZs. Reordering would replace existing subnets.
       availabilityZones: [
         'us-east-1b',
         'us-east-1c',
         'us-east-1d',
+        'us-east-1a',
+        'us-east-1e',
+        'us-east-1f',
       ],
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
       ipProtocol: IpProtocol.DUAL_STACK,

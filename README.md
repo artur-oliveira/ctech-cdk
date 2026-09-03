@@ -18,7 +18,7 @@ Ctech-Global
   └── global SSM pointers (OIDC provider and ACM certificate)
 
 Ctech-{Env}-Network
-  ├── dual-stack VPC across up to two AZs, no NAT Gateway
+  ├── dual-stack VPC across all six pinned us-east-1 AZs, no NAT Gateway
   ├── S3 and DynamoDB gateway endpoints
   ├── shared edge security-group identity
   ├── production-only private zone: internal.aoctech.app
@@ -113,7 +113,8 @@ Source version 0.3.0 exports from `lib/index.ts`:
 - `AsgScheduleProps`, `DEFAULT_ASG_SCHEDULE` and `addAsgSchedule` for the
   nightly ASG stop/start pair;
 - `HaproxyEc2Service`, the current private-IPv4 + IPv6 ASG, edge-SG and optional
-  route-registration pattern;
+  route-registration pattern, with `spot.instanceTypes` for diversifying Spot
+  capacity across compatible instance types;
 - `buildCloudWatchAgentConfig`, with a bounded four-series host/process metric
   set;
 - `createNextjsStaticFrontend`, which centralizes the repeated S3 + OAC + KVS +
@@ -127,6 +128,19 @@ resources directly to the supplied stack with the established IDs (`Bucket`,
 an existing frontend stack to migrate without changing logical IDs. Always
 prove that with a template diff before deployment; Wallet's locale rewrite,
 DFE's docs CSP and Poker's avatar behaviour use the documented escape hatches.
+
+Diversify a service across compatible Spot pools through the Spot
+configuration. The launch template's `instanceType` remains the fallback when
+this list is omitted:
+
+```ts
+spot: {
+  instanceTypes: [
+    new ec2.InstanceType('t4g.nano'),
+    new ec2.InstanceType('t4g.micro'),
+  ],
+},
+```
 
 ### Releasing
 
