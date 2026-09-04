@@ -10,6 +10,7 @@ import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAUL
 import {ValkeyStackV2} from "../lib/valkey-stack-v2";
 import {AlertsStack} from "../lib/alerts-stack";
 import {ValkeyStack} from "../lib/valkey-stack";
+import {InstanceClass, InstanceSize, InstanceType} from "aws-cdk-lib/aws-ec2";
 
 const app = new cdk.App();
 
@@ -32,19 +33,19 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // Manages: ctech-gha-infra IAM role, SSM pointers for OIDC provider and cert.
 // =====================
 new GlobalStack(app, 'Ctech-Global', {
-  env,
-  certArn: CERT_ARN,
-  ctechGithubRepo: CTECH_GITHUB_REPO,
-  description: 'CTech account-level shared infra (OIDC provider, cert, deploy role)',
+    env,
+    certArn: CERT_ARN,
+    ctechGithubRepo: CTECH_GITHUB_REPO,
+    description: 'CTech account-level shared infra (OIDC provider, cert, deploy role)',
 });
 
 // =====================
 // Per-environment stacks
 // =====================
 const networkStack = new NetworkStack(app, `Ctech-${cap(ENVIRONMENT)}-Network`, {
-  env,
-  environment: ENVIRONMENT,
-  description: `CTech Shared VPC & Security Groups - ${ENVIRONMENT}`,
+    env,
+    environment: ENVIRONMENT,
+    description: `CTech Shared VPC & Security Groups - ${ENVIRONMENT}`,
 });
 
 // =====================
@@ -53,9 +54,9 @@ const networkStack = new NetworkStack(app, `Ctech-${cap(ENVIRONMENT)}-Network`, 
 // their IAM permissions to {bucket}/{service-name}/* prefixes.
 // =====================
 new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
-  env,
-  environment: ENVIRONMENT,
-  description: `CTech Shared S3 Buckets (deployments + logs) - ${ENVIRONMENT}`,
+    env,
+    environment: ENVIRONMENT,
+    description: `CTech Shared S3 Buckets (deployments + logs) - ${ENVIRONMENT}`,
 });
 
 // =====================
@@ -70,12 +71,12 @@ new S3Stack(app, `Ctech-${cap(ENVIRONMENT)}-S3`, {
 // =====================
 const ALERT_EMAIL = process.env.ALERT_EMAIL;
 if (ALERT_EMAIL) {
-  new AlertsStack(app, `Ctech-${cap(ENVIRONMENT)}-Alerts`, {
-    env,
-    environment: ENVIRONMENT,
-    alertEmail: ALERT_EMAIL,
-    description: `CTech Alert Topic - ${ENVIRONMENT}`,
-  });
+    new AlertsStack(app, `Ctech-${cap(ENVIRONMENT)}-Alerts`, {
+        env,
+        environment: ENVIRONMENT,
+        alertEmail: ALERT_EMAIL,
+        description: `CTech Alert Topic - ${ENVIRONMENT}`,
+    });
 }
 
 // =====================
@@ -83,9 +84,9 @@ if (ALERT_EMAIL) {
 // Terraform services through /ctech/{env}/ec2-scripts/* SSM parameters).
 // =====================
 new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
-  env,
-  environment: ENVIRONMENT,
-  description: `CTech Shared EC2 Bootstrap Scripts - ${ENVIRONMENT}`,
+    env,
+    environment: ENVIRONMENT,
+    description: `CTech Shared EC2 Bootstrap Scripts - ${ENVIRONMENT}`,
 });
 
 // =====================
@@ -129,10 +130,14 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
 //
 // import {ValkeyStackV2} from '../lib/valkey-stack-v2';
 new ValkeyStackV2(app, `Ctech-${cap(ENVIRONMENT)}-ValkeyV2`, {
-  env,
-  environment: ENVIRONMENT,
-  vpc: networkStack.vpc,
-  privateHostedZone: networkStack.privateHostedZone,
-  description: `CTech Shared Valkey Cache (Alpine) - ${ENVIRONMENT}`,
+    env,
+    environment: ENVIRONMENT,
+    vpc: networkStack.vpc,
+    privateHostedZone: networkStack.privateHostedZone,
+    description: `CTech Shared Valkey Cache (Alpine) - ${ENVIRONMENT}`,
+    instanceTypes: [
+        InstanceType.of(InstanceClass.T4G, InstanceSize.NANO),
+        InstanceType.of(InstanceClass.T4G, InstanceSize.MICRO),
+    ]
 });
 // =====================

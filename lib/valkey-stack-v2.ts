@@ -16,6 +16,14 @@ interface ValkeyStackV2Props extends cdk.StackProps {
   vpc: ec2.Vpc;
   privateHostedZone?: route53.IPrivateHostedZone;
   schedule?: AsgScheduleProps;
+  /**
+   * Instance types the ASG may use to diversify Spot capacity, in preference order.
+   * The launch template's base instance type stays t4g.nano; these become
+   * mixedInstancesPolicy launchTemplateOverrides.
+   *
+   * @default - [t4g.nano]
+   */
+  instanceTypes?: readonly ec2.InstanceType[];
 }
 
 /**
@@ -35,6 +43,16 @@ export class ValkeyStackV2 extends cdk.Stack {
     const dnsName = privateHostedZone ? `cache.${privateHostedZone.zoneName}` : undefined;
 
     this.urlSsmPath = SSM.valkey(environment).url;
+
+    if (props.instanceTypes?.length === 0) {
+      throw new Error('instanceTypes must contain at least one instance type');
+    }
+    if ((props.instanceTypes?.length ?? 0) > 40) {
+      throw new Error('instanceTypes cannot contain more than 40 instance types');
+    }
+    const instanceTypes = props.instanceTypes ?? [
+      ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
+    ];
 
     const sg = new ec2.SecurityGroup(this, 'ValkeySg', {
       vpc,
@@ -230,6 +248,9 @@ export class ValkeyStackV2 extends cdk.Stack {
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
       mixedInstancesPolicy: {
         launchTemplate,
+        launchTemplateOverrides: instanceTypes.map((overrideInstanceType) => ({
+          instanceType: overrideInstanceType,
+        })),
         instancesDistribution: {
           onDemandPercentageAboveBaseCapacity: 0,
           spotAllocationStrategy: autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED,
