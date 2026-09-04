@@ -245,7 +245,11 @@ export class ValkeyStackV2 extends cdk.Stack {
     const asg = new autoscaling.AutoScalingGroup(this, 'ValkeyASG', {
       autoScalingGroupName: `${environment}-ctech-valkey-v2`,
       vpc,
-      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
+      // t4g is unavailable in us-east-1e. Keep the VPC subnet there for
+      // workloads that support it, but never offer it to this ASG.
+      vpcSubnets: {
+        subnets: vpc.publicSubnets.filter(subnet => subnet.availabilityZone !== 'us-east-1e'),
+      },
       mixedInstancesPolicy: {
         launchTemplate,
         launchTemplateOverrides: instanceTypes.map((overrideInstanceType) => ({

@@ -8,7 +8,9 @@ import {ValkeyStackV2} from '../lib/valkey-stack-v2';
 function synth() {
   const app = new cdk.App({context: {'aws:cdk:bundling-stacks': []}});
   const base = new cdk.Stack(app, 'Base', {env: {account: '111111111111', region: 'us-east-1'}});
-  const vpc = new ec2.Vpc(base, 'Vpc', {maxAzs: 2});
+  const vpc = new ec2.Vpc(base, 'Vpc', {
+    availabilityZones: ['us-east-1a', 'us-east-1b', 'us-east-1c', 'us-east-1d', 'us-east-1e', 'us-east-1f'],
+  });
   const stack = new ValkeyStackV2(app, 'Ctech-Prod-ValkeyV2', {
     env: {account: '111111111111', region: 'us-east-1'},
     environment: 'prod',
@@ -58,4 +60,10 @@ test('keeps one instance in prod, matching ValkeyStack today', () => {
     MinSize: '1',
     MaxSize: '2',
   });
+});
+
+test('excludes us-east-1e from the t4g ASG while retaining the VPC subnet', () => {
+  const {template} = synth();
+  const [asg] = Object.values(template.findResources('AWS::AutoScaling::AutoScalingGroup'));
+  assert.equal(asg.Properties.VPCZoneIdentifier.length, 5);
 });
