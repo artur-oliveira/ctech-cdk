@@ -41,6 +41,14 @@ test('setup-base.sh uses apk and adduser, and enables no cron unit AL2023 needed
   assert.match(body, /adduser -S -D -H -G webapp -s \/sbin\/nologin webapp/);
 });
 
+test('setup-base.sh points chronyd at the Amazon Time Sync Service, not pool.ntp.org', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-base.sh'), 'utf8');
+  assert.match(body, /server 169\.254\.169\.123 prefer iburst/, 'must sync from the link-local Time Sync Service, reachable with no internet egress');
+  assert.doesNotMatch(body, /pool\.ntp\.org/, 'pool.ntp.org is unreachable from this VPC and must not be configured as a source');
+  assert.match(body, /rm -f \/var\/lib\/chrony\/chrony\.drift/, 'a stale drift estimate from a prior boot must not blend into a fresh sync');
+  assert.match(body, /rc-service chronyd restart/);
+});
+
 test('setup-dualstack.sh writes OpenRC conf.d, not a systemd override', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-dualstack.sh'), 'utf8');
   assert.match(body, /\/etc\/environment/);
