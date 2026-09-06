@@ -138,6 +138,16 @@ been verified and a major-version removal is planned.
 - GitHub Actions uses OIDC, not long-lived AWS access keys.
 - `ctech-gha-infra` currently has `AdministratorAccess` because it deploys
   broad account-level CDK resources. Do not reuse it for application deploys.
+  Replacing the blanket grant with a hand-scoped policy is a tracked
+  follow-up (see the comment at the grant in `lib/global-stack.ts` and
+  `lib/github-deploy-roles.ts`'s per-service infra role;
+  `ctech-poker/cdk/lib/oidc-stack.ts` has a worked example of the
+  PowerUserAccess-plus-narrow-IAM-allowlist replacement). What is enforced:
+  `allowedSubSuffixes` on `githubTrustPrincipal`/`GithubActionsDeployRoles`
+  is required, not defaulted to `['*']` — a caller must explicitly choose
+  which refs/events may assume an infra role, since matching every ref let
+  any workflow run in the trusted repo (including one from a PR branch that
+  modified the workflow itself) assume account-admin.
 - `ctech-gha-packer` is scoped to EC2 image-build actions only (see "Alpine
   AMI pipeline") — never grant it `AdministratorAccess` or broader.
 - Keep service deploy roles separate by responsibility where possible.

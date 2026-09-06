@@ -14,6 +14,20 @@ function synth() {
   return Template.fromStack(stack);
 }
 
+test('ctech-gha-infra trust policy is scoped to specific refs, never a bare :* suffix', () => {
+  const template = synth();
+  const roles = template.findResources('AWS::IAM::Role');
+  const infra = Object.values(roles).find((r: any) => r.Properties.RoleName === 'ctech-gha-infra') as any;
+  assert.ok(infra, 'expected to find ctech-gha-infra');
+  const subs: string[] = infra.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringLike[
+    'token.actions.githubusercontent.com:sub'
+  ];
+  assert.ok(subs.length > 0);
+  for (const sub of subs) {
+    assert.ok(!sub.endsWith(':*'), `sub suffix should be scoped, got ${sub}`);
+  }
+});
+
 test('the Packer build role is scoped to image-build actions, never AdministratorAccess', () => {
   const template = synth();
   template.hasResourceProperties('AWS::IAM::Role', {
