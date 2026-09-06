@@ -28,6 +28,7 @@ export {
   HaproxyRouteRegistrationProps,
   AsgScheduleProps,
   AsgSpotProps,
+  TerminationDrainProps,
   DEFAULT_ASG_SCHEDULE,
   addAsgSchedule,
 } from './haproxy-ec2-service';

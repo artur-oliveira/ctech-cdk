@@ -125,7 +125,8 @@ Source version 0.9.0 exports from `lib/index.ts`:
   nightly ASG stop/start pair;
 - `HaproxyEc2Service`, the current private-IPv4 + IPv6 ASG, edge-SG and optional
   route-registration pattern, with `spot.instanceTypes` for diversifying Spot
-  capacity across compatible instance types;
+  capacity across compatible instance types, and an opt-in `terminationDrain`
+  for a graceful spot-interruption/scale-in window;
 - `buildCloudWatchAgentConfig`, with a bounded four-series host/process metric
   set;
 - `createNextjsStaticFrontend`, which centralizes the repeated S3 + OAC + KVS +
@@ -152,6 +153,28 @@ spot: {
   ],
 },
 ```
+
+Opt into a graceful termination drain (spot reclaim, scale-in, instance
+refresh) with `terminationDrain`. Omitting it keeps today's behavior —
+instances terminate immediately, with no warning to in-flight work:
+
+```ts
+terminationDrain: {
+  enabled: true,
+  drainCommand: 'rc-service app stop; rc-service app2 stop', // or `systemctl stop app app2` on AL2023
+  timeoutSeconds: 150, // default; the bounded window before AWS proceeds regardless
+},
+```
+
+This wires an ASG lifecycle hook (`EC2_INSTANCE_TERMINATING`) to a Lambda that
+runs `drainCommand` via SSM RunCommand and then calls
+`CompleteLifecycleAction` — on success or once its own bounded wait elapses,
+so a stuck SSM agent can never strand an instance in `Terminating:Wait`. Stop
+the app process in `drainCommand`: HAProxy's existing health poll then starts
+failing and traffic drains away on its own, with no separate deregistration
+call needed. `ctech-poker`'s API stack has a hand-rolled version of this same
+pattern locally (`cdk/lib/api-stack.ts`); it should migrate to this prop once
+this ships, rather than keeping two copies in the family.
 
 ### Releasing
 
