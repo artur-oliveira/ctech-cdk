@@ -188,6 +188,117 @@ test('HaproxyEc2Service schedules disable to zero and enable back to configured 
   });
 });
 
+test('HaproxyEc2Service adds no lifecycle hook when terminationDrain is omitted', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'NoDrainFixture');
+  const vpc = new ec2.Vpc(stack, 'Vpc', {natGateways: 0, maxAzs: 2});
+  new HaproxyEc2Service(stack, 'Svc', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 1,
+  });
+  const template = Template.fromStack(stack);
+  template.resourceCountIs('AWS::AutoScaling::LifecycleHook', 0);
+  template.resourceCountIs('AWS::Lambda::Function', 0);
+});
+
+test('HaproxyEc2Service terminationDrain requires a drainCommand', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'InvalidDrainFixture');
+  const vpc = new ec2.Vpc(stack, 'Vpc', {natGateways: 0, maxAzs: 2});
+  assert.throws(() => new HaproxyEc2Service(stack, 'Svc', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 1,
+    terminationDrain: {enabled: true, drainCommand: ''},
+  }), /drainCommand is required/);
+});
+
+test('HaproxyEc2Service wires an opt-in termination-drain lifecycle hook', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'DrainFixture', {
+    env: {account: '111111111111', region: 'us-east-1'},
+  });
+  const vpc = new ec2.Vpc(stack, 'Vpc', {natGateways: 0, maxAzs: 2});
+  new HaproxyEc2Service(stack, 'Svc', {
+    vpc,
+    edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080,
+    userData: ec2.UserData.forLinux(),
+    instanceProfileName: 'fixture-profile',
+    securityGroupName: 'fixture-sg',
+    securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY,
+    asgName: 'fixture-asg',
+    minCapacity: 1,
+    maxCapacity: 1,
+    terminationDrain: {
+      enabled: true,
+      drainCommand: 'rc-service app stop',
+      timeoutSeconds: 180,
+    },
+  });
+  const template = Template.fromStack(stack);
+
+  template.resourceCountIs('AWS::AutoScaling::LifecycleHook', 1);
+  template.hasResourceProperties('AWS::AutoScaling::LifecycleHook', {
+    LifecycleHookName: 'fixture-asg-termination-drain',
+    LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING',
+    DefaultResult: 'CONTINUE',
+    HeartbeatTimeout: 180,
+  });
+
+  // SendCommand is scoped to instances tagged Name=<this ASG's name>, not '*'.
+  template.hasResourceProperties('AWS::IAM::Policy', Match.objectLike({
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Action: 'ssm:SendCommand',
+          Condition: {StringEquals: {'ssm:resourceTag/Name': 'fixture-asg'}},
+        }),
+      ]),
+    }),
+  }));
+
+  // CompleteLifecycleAction is scoped to this specific ASG's ARN, not '*'.
+  template.hasResourceProperties('AWS::IAM::Policy', Match.objectLike({
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Action: 'autoscaling:CompleteLifecycleAction',
+          Resource: Match.objectLike({
+            'Fn::Join': Match.arrayWith([
+              Match.arrayWith([Match.stringLikeRegexp('autoScalingGroupName/')]),
+            ]),
+          }),
+        }),
+      ]),
+    }),
+  }));
+});
+
 test('HaproxyEc2Service registers no scheduled action when schedule is omitted', () => {
   const app = new cdk.App();
   const stack = new cdk.Stack(app, 'NoScheduleFixture', {

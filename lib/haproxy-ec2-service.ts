@@ -1,8 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import {CfnScalableTarget} from "aws-cdk-lib/aws-applicationautoscaling";
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
+import * as hooktargets from 'aws-cdk-lib/aws-autoscaling-hooktargets';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -98,6 +100,33 @@ export interface AsgSpotProps {
   capacityRebalance?: boolean;
 }
 
+export interface TerminationDrainProps {
+  /**
+   * Opt-in. When false or omitted, no lifecycle hook is created and
+   * termination behaves exactly as it does today (no drain window).
+   */
+  enabled: boolean;
+
+  /**
+   * Shell command run via SSM RunShellScript on the instance once it enters
+   * `Terminating:Wait`, e.g. `'rc-service app stop'` or `'systemctl stop app'`.
+   * This construct doesn't own the app process, so it can't guess how to stop
+   * it — required whenever `enabled` is true. Use this to stop the app so
+   * HAProxy's health check starts failing and traffic drains away (the
+   * construct's existing health-reporting path — see class doc — already
+   * covers new-traffic deregistration once the app stops responding; nothing
+   * new is needed for that half).
+   */
+  drainCommand: string;
+
+  /**
+   * Lifecycle hook heartbeat timeout: the bounded window the instance gets
+   * before AWS proceeds with termination regardless of drain progress.
+   * @default 150
+   */
+  timeoutSeconds?: number;
+}
+
 export interface HaproxyEc2ServiceProps {
   vpc: ec2.IVpc;
   edgeSecurityGroup: ec2.ISecurityGroup;
@@ -124,6 +153,21 @@ export interface HaproxyEc2ServiceProps {
   route?: HaproxyRouteRegistrationProps;
   schedule?: AsgScheduleProps;
   spot?: AsgSpotProps;
+
+  /**
+   * Graceful termination drain on spot reclaim / scale-in / instance refresh.
+   * Opt-in and backward-compatible — omitting it keeps today's behavior
+   * (instance terminates immediately, no warning to in-flight work).
+   *
+   * Wires an ASG lifecycle hook (`EC2_INSTANCE_TERMINATING`) to a Lambda that
+   * runs `drainCommand` on the instance via SSM RunCommand and then completes
+   * the lifecycle action — CONTINUE either on success or once its own bounded
+   * wait elapses, so a stuck SSM agent can never strand an instance in
+   * `Terminating:Wait`. This covers both spot reclamation (Capacity
+   * Rebalance/interruption) and ordinary scale-in/instance-refresh with one
+   * mechanism, per AWS's recommended lifecycle-hook pattern.
+   */
+  terminationDrain?: TerminationDrainProps;
 }
 
 /**
@@ -134,6 +178,11 @@ export interface HaproxyEc2ServiceProps {
  * The ASG, launch template, log groups and route are exposed so callers can add
  * service-specific alarms, lifecycle drains and outputs without widening this
  * construct's contract.
+ *
+ * `terminationDrain` is this construct's own opt-in lifecycle drain (spot
+ * reclaim, scale-in, instance refresh) — see `TerminationDrainProps`. Callers
+ * needing something beyond a single shell command can still build their own
+ * lifecycle hook against the exposed `autoScalingGroup` instead.
  */
 export class HaproxyEc2Service extends Construct {
   public readonly securityGroup: ec2.SecurityGroup;
@@ -151,6 +200,9 @@ export class HaproxyEc2Service extends Construct {
     }
     if (props.appPort < 1 || props.appPort > 65535) {
       throw new Error('appPort must be between 1 and 65535');
+    }
+    if (props.terminationDrain?.enabled && !props.terminationDrain.drainCommand?.trim()) {
+      throw new Error('terminationDrain.drainCommand is required when terminationDrain.enabled is true');
     }
 
     this.securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
@@ -280,6 +332,100 @@ export class HaproxyEc2Service extends Construct {
     if (props.route) {
       this.routeParameter = this.createRoute(props.route, props.appPort, props.asgName);
     }
+
+    if (props.terminationDrain?.enabled) {
+      this.addTerminationDrain(props.terminationDrain, props.asgName);
+    }
+  }
+
+  /**
+   * Wires the opt-in graceful-termination lifecycle hook. See
+   * `TerminationDrainProps` for the shape and `HaproxyEc2ServiceProps.terminationDrain`
+   * for the overall design note.
+   */
+  private addTerminationDrain(drain: TerminationDrainProps, asgName: string): void {
+    const heartbeatTimeout = cdk.Duration.seconds(drain.timeoutSeconds ?? 150);
+    // Leave the SSM command itself a bounded window inside the hook's own
+    // timeout, so the Lambda's `finally` has time to call
+    // CompleteLifecycleAction before AWS times the hook out regardless.
+    const commandTimeoutSeconds = Math.max(30, heartbeatTimeout.toSeconds() - 30);
+
+    const drainFunction = new lambda.Function(this, 'TerminationDrainFunction', {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      handler: 'index.handler',
+      timeout: cdk.Duration.seconds(Math.min(commandTimeoutSeconds + 15, 900)),
+      code: lambda.Code.fromInline(`
+import boto3, json, time
+asg = boto3.client("autoscaling")
+ssm = boto3.client("ssm")
+
+def handler(event, context):
+    message = json.loads(event["Records"][0]["Sns"]["Message"])
+    if message.get("Event") == "autoscaling:TEST_NOTIFICATION":
+        return
+    instance_id = message["EC2InstanceId"]
+    try:
+        result = ssm.send_command(
+            InstanceIds=[instance_id],
+            DocumentName="AWS-RunShellScript",
+            Parameters={"commands": [${JSON.stringify(drain.drainCommand)}]},
+            TimeoutSeconds=${commandTimeoutSeconds},
+        )
+        command_id = result["Command"]["CommandId"]
+        deadline = time.time() + ${commandTimeoutSeconds}
+        while time.time() < deadline:
+            try:
+                status = ssm.get_command_invocation(
+                    CommandId=command_id, InstanceId=instance_id)["Status"]
+                if status in ("Success", "Cancelled", "Failed", "TimedOut"):
+                    break
+            except ssm.exceptions.InvocationDoesNotExist:
+                pass
+            time.sleep(2)
+    finally:
+        asg.complete_lifecycle_action(
+            LifecycleHookName=message["LifecycleHookName"],
+            AutoScalingGroupName=message["AutoScalingGroupName"],
+            LifecycleActionToken=message["LifecycleActionToken"],
+            LifecycleActionResult="CONTINUE",
+        )
+`),
+    });
+
+    // SendCommand has no resource-level support for the document itself
+    // beyond its own ARN; the instance target is scoped to instances tagged
+    // Name=asgName — the tag this construct's launch template already stamps
+    // on every instance it launches (see LaunchTemplateData.TagSpecifications
+    // above), so this can never reach an instance outside this ASG.
+    drainFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:SendCommand'],
+      resources: [`arn:${cdk.Aws.PARTITION}:ec2:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:instance/*`],
+      conditions: {StringEquals: {'ssm:resourceTag/Name': asgName}},
+    }));
+    drainFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:SendCommand'],
+      resources: [`arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}::document/AWS-RunShellScript`],
+    }));
+    // Command-status polling has no resource-level scoping in IAM.
+    drainFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetCommandInvocation'],
+      resources: ['*'],
+    }));
+    drainFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['autoscaling:CompleteLifecycleAction'],
+      resources: [this.autoScalingGroup.autoScalingGroupArn],
+    }));
+
+    this.autoScalingGroup.addLifecycleHook('TerminationDrainHook', {
+      lifecycleHookName: `${asgName}-termination-drain`,
+      lifecycleTransition: autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
+      // Fail open: if the drain path never fires (Lambda broken, SNS delivery
+      // lost), the instance still terminates once the heartbeat elapses
+      // rather than getting stuck in Terminating:Wait forever.
+      defaultResult: autoscaling.DefaultResult.CONTINUE,
+      heartbeatTimeout,
+      notificationTarget: new hooktargets.FunctionHook(drainFunction),
+    });
   }
 
   private createRoute(
