@@ -2,6 +2,30 @@
 
 Account-level AWS CDK and the published `@aoctech/cdk` package.
 
+This is a shared foundation library consumed by every CTech service's own `cdk/` folder — treat every change here
+(defaults, IAM, health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local
+tweak. Confirmed consumers today (`package.json` pins as of this audit, all `^0.8.0`): `ctech-account/cdk`,
+`ctech-wallet/cdk`, `ctech-dfe/cdk`, `ctech-poker/cdk`. `ctech-billing` does not consume this package (Terraform).
+
+## CTech Family — Cross-Repo Awareness (IMPORTANT)
+
+This repo is one service in the CTech product family, not an isolated project. All CTech repos live under the same GitHub account and are meant to be treated as one codebase split across repos:
+
+- ctech-cdk (github.com/artur-oliveira/ctech-cdk) — shared CDK constructs (EC2/ASG, DynamoDB, etc.)
+- ctech-go-common (github.com/artur-oliveira/ctech-go-common) — shared Go libraries (HTTP client, auth, retries, websocket drain, caching)
+- ctech-account, ctech-wallet, ctech-billing, ctech-dfe, ctech-poker — backend services
+- ctech-ui (github.com/artur-oliveira/ctech-ui) — shared frontend design system / components (adoption in progress)
+- ctech-ws-client (github.com/artur-oliveira/ctech-ws-client) — shared websocket client library
+- ctech-oauth-client, ctech-vanity, ctech-lbalancer — supporting infra/clients
+
+Before making a decision here, ask: "does this apply to the whole family, not just this repo?" Treat as cross-repo by default:
+- Infra/runtime bugs (clock drift, spot interruption handling, websocket draining, health checks, load balancer behavior) — check ctech-cdk / ctech-lbalancer and sibling services for the same exposure before treating it as local.
+- API leaks/perf/cost bugs (DynamoDB read/write amplification, KMS decrypt calls, SQS growth, N+1 requests) — check whether the root cause is shared code (ctech-go-common) or a repeatable pattern other services also have.
+- Frontend state/websocket/resilience/UX patterns (reconnect, circuit breaker, error/loading/empty states, 404/500/503 pages, OAuth flow, modals, buttons) — check ctech-ui and ctech-ws-client for the shared version before implementing locally.
+- New reusable code (not service-specific business logic) — default to proposing it for a shared package (ctech-cdk, ctech-go-common, ctech-ui, ctech-ws-client) instead of duplicating it here.
+
+A fix scoped to only this repo, for a problem that is actually systemic across the family, is an incomplete fix. This applies to AI agents working in single-repo sessions too.
+
 ## Source of truth
 
 `bin/ctech-cdk.ts` currently instantiates exactly:
@@ -10,24 +34,31 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
 - `NetworkStack`: dual-stack/no-NAT VPC, gateway endpoints, shared edge SG, and
   the production private hosted zone;
 - `S3Stack`: shared deployments and application-log buckets;
-- `ValkeyStack`: shared EC2/ASG cache and pub/sub endpoint (`t4g.nano`),
-  publishing `/ctech/{env}/valkey/url` and `cache.internal.aoctech.app`.
-  `DragonflyStack` (`lib/dragonfly-stack.ts`) exists but is not instantiated —
-  rolled back, no measured performance gain on a `t4g.nano` (commit
-  `4ca03db`). Do not re-enable it without re-measuring.
+- `AlertsStack` (conditional on `ALERT_EMAIL` being set): the shared
+  `ctech-{env}-alerts` SNS topic (`bin/ctech-cdk.ts:63-71`).
 - `Ec2ScriptsStack`: shared EC2 bootstrap scripts published under a content-hash
   prefix, with `/ctech/{env}/ec2-scripts/{bucket,version}` pointers. It also
   publishes the Alpine script library and the `ctech-ec2-agent` binary the
   same way — `/ctech/{env}/ec2-scripts-alpine/{bucket,version}` and
   `/ctech/{env}/ctech-ec2-agent/{bucket,version}`.
+- `ValkeyStackV2` (`lib/valkey-stack-v2.ts`, Alpine/OpenRC): **the currently
+  active cache stack** (`bin/ctech-cdk.ts:130-141`, uncommented), publishing
+  `/ctech/{env}/valkey/url` and `cache.internal.aoctech.app`, booting from an
+  AMI resolved from `/ctech/{env}/ami/alpine/arm64`. The surrounding code
+  comment still says "staged... do not uncomment until
+  `docs/plans/2026-08-23-alpine-ec2-ami.md` Task 13's pre-cutover validation
+  has passed" — that comment is now stale (or the cutover happened without
+  updating it); verify Task 13 was actually completed before trusting this as
+  validated-in-prod.
 
-`lib/valkey-stack-v2.ts` (`ValkeyStackV2`) exists but is not instantiated —
-staged in `bin/ctech-cdk.ts`, commented out, pending the prod cutover in
-`docs/plans/2026-08-23-alpine-ec2-ami.md` Task 13. It is the Alpine/OpenRC
-equivalent of `ValkeyStack`, booting from an AMI resolved from
-`/ctech/{env}/ami/alpine/arm64` instead of Amazon Linux 2023. Same external
-contract (`/ctech/{env}/valkey/url`, `cache.internal.aoctech.app`) — the two
-cannot coexist in one environment.
+The original `ValkeyStack` (`lib/valkey-stack.ts`) and `DragonflyStack`
+(`lib/dragonfly-stack.ts`) both exist but are **not instantiated** —
+commented out in `bin/ctech-cdk.ts:99-121`. Dragonfly was rolled back (no
+measured performance gain on a `t4g.nano`, commit `4ca03db`); Valkey (non-Alpine)
+was superseded by `ValkeyStackV2`. Neither should be re-enabled without
+re-checking which one owns `/ctech/{env}/valkey/url` in the target environment
+first — only one of the three cache stacks may be instantiated at a time, they
+all fight over the same SSM parameter and DNS record.
 
 There is no deployed `AlbStack`. Public and private ingress is owned by
 `ctech-lbalancer`. `lib/alb-stack.ts`, `SSM.alb()`, and

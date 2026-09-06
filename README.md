@@ -3,6 +3,11 @@
 AWS CDK (TypeScript) for shared, account-level CTech infrastructure and the
 `@aoctech/cdk` package used by service CDKs.
 
+This is a shared foundation library consumed by every CTech service — treat every change here (defaults, IAM,
+health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local tweak.
+Confirmed consumers today: `ctech-account/cdk`, `ctech-wallet/cdk`, `ctech-dfe/cdk`, `ctech-poker/cdk` (all pinned
+`^0.8.0`). `ctech-billing` does not consume this package (Terraform).
+
 The deployed platform owns the dual-stack VPC, GitHub Actions OIDC provider,
 shared S3 buckets, the production private hosted zone, and the shared Dragonfly
 cache. Public and private API ingress is provided by
@@ -34,17 +39,23 @@ Ctech-{Env}-Ec2Scripts
   ├── {env}-ctech-ec2-scripts, objects under a content-hash prefix
   └── /ctech/{env}/ec2-scripts/{bucket,version}
 
-Ctech-{Env}-Dragonfly
-  ├── DragonflyDB on an EC2 Auto Scaling Group, t4g.nano
+Ctech-{Env}-ValkeyV2
+  ├── ValkeyStackV2 (Alpine/OpenRC) on an EC2 Auto Scaling Group, t4g.nano/micro spot
   ├── desired/min/max = 1/1/1 in every environment
-  ├── nightly schedule takes it to zero 22:00-10:00 BRT
+  ├── boots from an AMI resolved from /ctech/{env}/ami/alpine/arm64
   └── cache.internal.aoctech.app + /ctech/{env}/valkey/url
 ```
 
-Only `GlobalStack`, `NetworkStack`, `S3Stack`, `Ec2ScriptsStack`, and
-`DragonflyStack` are instantiated by `bin/ctech-cdk.ts`. `lib/alb-stack.ts` and
+Only `GlobalStack`, `NetworkStack`, `S3Stack`, `Ec2ScriptsStack`,
+`AlertsStack` (conditional on `ALERT_EMAIL`), and `ValkeyStackV2` are
+instantiated by `bin/ctech-cdk.ts`. `lib/alb-stack.ts` and
 `PrivateIpv4Ec2Service` are retained as legacy migration code; neither
-represents the current production ingress architecture.
+represents the current production ingress architecture. `lib/dragonfly-stack.ts`
+and the original `lib/valkey-stack.ts` also exist but are **not** instantiated
+(commented out in `bin/ctech-cdk.ts`) — Dragonfly was rolled back (no measured
+performance gain on a `t4g.nano`) and the non-Alpine Valkey stack was
+superseded by `ValkeyStackV2`. Only one cache stack may be instantiated per
+environment; see `CLAUDE.md` "Source of truth" before touching any of them.
 
 The SSM path `/ctech/{env}/network/alb-sg-id` and the physical security-group
 name retain `alb` for compatibility. The resource is now the shared edge SG
@@ -100,7 +111,7 @@ the current entrypoint does not deploy `AlbStack` and therefore does not write
 npm install @aoctech/cdk
 ```
 
-Source version 0.3.0 exports from `lib/index.ts`:
+Source version 0.9.0 exports from `lib/index.ts`:
 
 - `Environment`, `SSMParams`;
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
@@ -146,7 +157,7 @@ spot: {
 
 1. Land a green change on `main`.
 2. Bump `package.json` using semver.
-3. Create release/tag `vX.Y.Z` (the next release is `v0.3.0`).
+3. Create release/tag `vX.Y.Z` matching the bumped `package.json` version (current published version is `v0.9.0`; consumers pin `^0.8.0`).
 4. `.github/workflows/publish.yml` publishes with npm trusted publishing and
    provenance; no `NPM_TOKEN` is stored.
 5. Upgrade consumers deliberately and run their synths.
@@ -220,7 +231,16 @@ The stack is skipped entirely when `ALERT_EMAIL` is unset — an address baked
 into source is one nobody notices is wrong. AWS sends a confirmation e-mail on
 first deploy and the subscription delivers nothing until it is accepted.
 
-## Shared cache (Dragonfly)
+## Shared cache (Dragonfly) — rolled back, not currently deployed
+
+**Status:** `DragonflyStack` is commented out in `bin/ctech-cdk.ts` and is not
+instantiated in any environment — it was rolled back for no measured
+performance gain on a `t4g.nano` (commit `4ca03db`). The currently active cache
+stack is `ValkeyStackV2` (Alpine/OpenRC); see "Current architecture" above and
+`CLAUDE.md` "Source of truth". This section is kept as reference for the flag
+choices below, which still apply if Dragonfly is ever revisited, but do not
+follow the deploy commands here without first checking which stack currently
+owns `/ctech/{env}/valkey/url` in the target environment.
 
 `DragonflyStack` replaces `ValkeyStack` and deliberately keeps its contract:
 the same `/ctech/{env}/valkey/url` parameter and the same
