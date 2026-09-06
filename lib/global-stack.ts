@@ -3,11 +3,33 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {SSM} from './constants';
+import {githubTrustPrincipal} from './github-deploy-roles';
+
+// Refs/events `.github/workflows/ctech-cdk.yml` actually assumes
+// ctech-gha-infra from: `push` to main/staging/dev (the deploy job) and
+// `pull_request` against those branches (the read-only `cdk diff` job).
+// Keep in sync with that workflow's `on:` block.
+const DEFAULT_ALLOWED_SUB_SUFFIXES = [
+  'ref:refs/heads/main',
+  'ref:refs/heads/staging',
+  'ref:refs/heads/dev',
+  'pull_request',
+];
 
 interface GlobalStackProps extends cdk.StackProps {
   certArn: string;
   // e.g. "myorg/ctech-cdk"
   ctechGithubRepo: string;
+  /**
+   * Restricts which workflow runs may assume `ctech-gha-infra` — sub-claim
+   * suffixes matched with `StringLike`. Defaults to the refs/events
+   * `.github/workflows/ctech-cdk.yml` actually triggers on. Previously this
+   * trusted `repo:${ctechGithubRepo}:*` (any ref at all), which meant any
+   * workflow run in this repo — including one from a PR branch that
+   * modified the workflow file itself — could assume a role with
+   * AdministratorAccess.
+   */
+  allowedSubSuffixes?: string[];
 }
 
 export class GlobalStack extends cdk.Stack {
@@ -28,16 +50,28 @@ export class GlobalStack extends cdk.Stack {
     this.oidcProviderArn = provider.openIdConnectProviderArn;
 
     // ctech-cdk infra deploy role - assumed by ctech-cdk's GitHub Actions workflow.
-    const trust = new iam.FederatedPrincipal(
-      provider.openIdConnectProviderArn,
-      {StringLike: {'token.actions.githubusercontent.com:sub': `repo:${ctechGithubRepo}:*`}},
-      'sts:AssumeRoleWithWebIdentity',
+    const trust = githubTrustPrincipal(
+      this,
+      ctechGithubRepo,
+      props.allowedSubSuffixes ?? DEFAULT_ALLOWED_SUB_SUFFIXES,
     );
 
     const infraRole = new iam.Role(this, 'InfraDeployRole', {
       roleName: 'ctech-gha-infra',
       assumedBy: trust,
     });
+    // KNOWN RISK (tracked, not fixed here): cdk deploy needs broad
+    // permissions across many resource types, and AdministratorAccess is
+    // still the blanket grant used to cover that — any workflow run matching
+    // `allowedSubSuffixes` above gets full account-admin. Replacing this with
+    // a hand-scoped policy (CloudFormation + bootstrap S3 bucket + PassRole
+    // to the bootstrap execution role + ECR) is backlog B11; see
+    // ctech-poker/cdk/lib/oidc-stack.ts for a per-service hand-scoped
+    // replacement (PowerUserAccess + narrow IAM allowlist + explicit Deny on
+    // privilege-escalation actions) that could be generalized here. What
+    // *is* fixed now: the trust policy above no longer matches every ref in
+    // the repo (`:*`) — only the specific push/pull_request triggers this
+    // workflow actually uses.
     infraRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess'),
     );
