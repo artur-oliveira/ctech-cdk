@@ -92,6 +92,8 @@ export class ValkeyStackV2 extends cdk.Stack {
     }));
 
     const userData = ec2.UserData.forLinux();
+    // Version the launch template so the migration also replaces existing Spot hosts.
+    userData.addCommands('# EC2 capacity: t4g.nano On-Demand');
     userData.addCommands(
       'set -euo pipefail',
       // No public IPv4 and no NAT gateway on this instance — every AWS API
