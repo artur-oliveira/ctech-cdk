@@ -1,3 +1,7 @@
+## EC2 capacity (2026-10-01)
+
+The active ValkeyV2 stack uses only `t4g.nano` On-Demand capacity. `HaproxyEc2Service` 0.10.0 accepts `onDemand: true`, emits a direct launch template without MixedInstancesPolicy, and disables capacity rebalance. Combining `onDemand` and `spot` is rejected. Existing callers retain their Spot defaults; billing and dfe are not migrated. EC2 Instance Savings Plans are purchased separately and apply automatically to eligible usage in the selected family and region. Historical Spot notes below are superseded.
+
 # ctech-cdk
 
 AWS CDK (TypeScript) for shared, account-level CTech infrastructure and the

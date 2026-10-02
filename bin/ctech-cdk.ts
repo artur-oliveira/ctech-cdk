@@ -8,7 +8,6 @@ import {Ec2ScriptsStack} from '../lib/ec2-scripts-stack';
 import {AlertsStack, Environment} from '../lib';
 import {DEFAULT_AWS_ACCOUNT, DEFAULT_AWS_REGION, DEFAULT_CERTIFICATE_ARN, DEFAULT_GITHUB_REPO} from "../lib/constants";
 import {ValkeyStackV2} from "../lib/valkey-stack-v2";
-import {InstanceClass, InstanceSize, InstanceType} from "aws-cdk-lib/aws-ec2";
 
 const app = new cdk.App();
 
@@ -133,9 +132,5 @@ new ValkeyStackV2(app, `Ctech-${cap(ENVIRONMENT)}-ValkeyV2`, {
   vpc: networkStack.vpc,
   privateHostedZone: networkStack.privateHostedZone,
   description: `CTech Shared Valkey Cache (Alpine) - ${ENVIRONMENT}`,
-  instanceTypes: [
-    InstanceType.of(InstanceClass.T4G, InstanceSize.NANO),
-    InstanceType.of(InstanceClass.T4G, InstanceSize.MICRO),
-  ]
 });
 // =====================

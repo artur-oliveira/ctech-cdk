@@ -128,6 +128,8 @@ export interface TerminationDrainProps {
 }
 
 export interface HaproxyEc2ServiceProps {
+  /** Use only On-Demand instances; incompatible with spot configuration. Default: false. */
+  onDemand?: boolean;
   vpc: ec2.IVpc;
   edgeSecurityGroup: ec2.ISecurityGroup;
   appPort: number;
@@ -194,6 +196,9 @@ export class HaproxyEc2Service extends Construct {
 
   constructor(scope: Construct, id: string, props: HaproxyEc2ServiceProps) {
     super(scope, id);
+    if (props.onDemand && props.spot) {
+      throw new Error('onDemand and spot cannot be configured together');
+    }
 
     if (props.minCapacity < 0 || props.maxCapacity < props.minCapacity) {
       throw new Error('ASG capacity must satisfy 0 <= minCapacity <= maxCapacity');
@@ -299,7 +304,14 @@ export class HaproxyEc2Service extends Construct {
       autoScalingGroupName: props.asgName,
       vpc: props.vpc,
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
-      mixedInstancesPolicy: {
+      launchTemplate: props.onDemand ? this.launchTemplate : undefined,
+      updatePolicy: props.onDemand ? autoscaling.UpdatePolicy.rollingUpdate({
+        minInstancesInService: props.minCapacity,
+        maxBatchSize: 1,
+        pauseTime: cdk.Duration.minutes(5),
+        waitOnResourceSignals: false,
+      }) : undefined,
+      mixedInstancesPolicy: props.onDemand ? undefined : {
         launchTemplate: this.launchTemplate,
         launchTemplateOverrides: props.spot?.instanceTypes?.map((overrideInstanceType) => ({
           instanceType: overrideInstanceType,
@@ -309,7 +321,7 @@ export class HaproxyEc2Service extends Construct {
           spotAllocationStrategy
         },
       },
-      capacityRebalance: props.spot ? props.spot.capacityRebalance ?? true : undefined,
+      capacityRebalance: props.onDemand ? false : props.spot ? props.spot.capacityRebalance ?? true : undefined,
       minCapacity: props.minCapacity,
       maxCapacity: props.maxCapacity,
       desiredCapacity: props.desiredCapacity,
