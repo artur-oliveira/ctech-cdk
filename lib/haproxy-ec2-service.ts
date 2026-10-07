@@ -305,12 +305,17 @@ export class HaproxyEc2Service extends Construct {
       vpc: props.vpc,
       vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
       launchTemplate: props.onDemand ? this.launchTemplate : undefined,
-      updatePolicy: props.onDemand ? autoscaling.UpdatePolicy.rollingUpdate({
-        minInstancesInService: props.minCapacity,
+      // Userdata (env files, bootstrap) only runs at launch, so a launch template
+      // change must replace running instances — otherwise they keep the old env
+      // and the next deploy.sh starts a new binary against it. Applies to Spot
+      // (MixedInstancesPolicy) too. CloudFormation rejects MinInstancesInService
+      // >= MaxSize, so keep one slot of headroom for the replacement.
+      updatePolicy: autoscaling.UpdatePolicy.rollingUpdate({
+        minInstancesInService: Math.min(props.minCapacity, Math.max(props.maxCapacity - 1, 0)),
         maxBatchSize: 1,
         pauseTime: cdk.Duration.minutes(5),
         waitOnResourceSignals: false,
-      }) : undefined,
+      }),
       mixedInstancesPolicy: props.onDemand ? undefined : {
         launchTemplate: this.launchTemplate,
         launchTemplateOverrides: props.spot?.instanceTypes?.map((overrideInstanceType) => ({

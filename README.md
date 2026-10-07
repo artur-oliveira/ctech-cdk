@@ -411,6 +411,20 @@ changes the asset hash, which changes every consuming service's user data on its
 next deploy — that is what triggers the instance refresh, and it means a script
 change is a cross-repository change.
 
+`HaproxyEc2Service` attaches a CloudFormation `AutoScalingRollingUpdate` policy to
+every ASG (On-Demand and Spot, since 0.10.1), so any launch template change, such
+as a new `/etc/app-static.env` variable, replaces running instances one at a time
+during `cdk deploy`. Before 0.10.1 Spot ASGs kept their old instances, and the next
+`deploy-backend` run started a new binary against the stale env file.
+`MinInstancesInService` is `minCapacity` capped at `maxCapacity - 1`, because
+CloudFormation rejects a value that leaves no room for the replacement.
+
+The `deploy-backend` action polls each SSM invocation until it reaches a terminal
+status, for up to `timeout-seconds` (also the SSM `executionTimeout`) plus a 60s
+delivery margin, and prints the command's stdout and stderr on failure. It no longer
+uses `aws ssm wait command-executed`, which gave up after about 100 seconds and
+reported a still-running deploy as `InProgress`.
+
 #### Zero-downtime rolling deploy on a single instance
 
 By default `deploy.sh` restarts one `app` process, so a deploy has a brief gap
