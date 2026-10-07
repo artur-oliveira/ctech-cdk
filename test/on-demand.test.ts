@@ -34,6 +34,29 @@ test('On-Demand service emits only a nano launch template and rolling replacemen
   });
 });
 
+test('Spot service also rolls instances when the launch template changes', () => {
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'Spot');
+  const vpc = new ec2.Vpc(stack, 'Vpc', {natGateways: 0});
+  const base = {
+    vpc, edgeSecurityGroup: new ec2.SecurityGroup(stack, 'Edge', {vpc}),
+    appPort: 8080, userData: ec2.UserData.forLinux(), instanceProfileName: 'fixture',
+    securityGroupName: 'fixture', securityGroupDescription: 'fixture',
+    appLogGroupName: '/fixture/app', logRetention: logs.RetentionDays.ONE_WEEK,
+    logRemovalPolicy: cdk.RemovalPolicy.DESTROY, spot: {percentage: 100},
+  };
+  new HaproxyEc2Service(stack, 'Headroom', {...base, asgName: 'headroom', minCapacity: 1, maxCapacity: 2});
+  new HaproxyEc2Service(stack, 'NoHeadroom', {
+    ...base, asgName: 'no-headroom', appLogGroupName: '/fixture/app2', minCapacity: 1, maxCapacity: 1,
+  });
+  const asgs = Template.fromStack(stack).findResources('AWS::AutoScaling::AutoScalingGroup');
+  const byName = Object.fromEntries(Object.values(asgs).map((a: any) => [a.Properties.AutoScalingGroupName, a]));
+  assert.ok(byName['headroom'].Properties.MixedInstancesPolicy);
+  assert.equal(byName['headroom'].UpdatePolicy.AutoScalingRollingUpdate.MinInstancesInService, 1);
+  // MinInstancesInService must stay below MaxSize or CloudFormation rejects the update.
+  assert.equal(byName['no-headroom'].UpdatePolicy.AutoScalingRollingUpdate.MinInstancesInService, 0);
+});
+
 test('active Valkey uses only nano On-Demand capacity', () => {
   const app = new cdk.App();
   const network = new cdk.Stack(app, 'Network');
