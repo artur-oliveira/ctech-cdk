@@ -24,8 +24,12 @@ RELEASE_DIR="/opt/app/releases/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RELEASE_DIR"
 
 echo "Downloading release: $S3_KEY"
+rm -f /tmp/release.zip
 ctech-ec2-agent s3-cp -bucket __BUCKET__ -key "$S3_KEY" -dest /tmp/release.zip
 unzip -o /tmp/release.zip -d "$RELEASE_DIR"
+# The zip is not kept: on a small root (1 GB on Alpine) a stale zip beside two
+# releases is what fills the disk.
+rm -f /tmp/release.zip
 for b in __BINARIES__; do chmod +x "$RELEASE_DIR/$b"; done
 chown -R webapp:webapp "$RELEASE_DIR"
 ln -sfT "$RELEASE_DIR" /opt/app/current

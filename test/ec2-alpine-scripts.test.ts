@@ -126,3 +126,15 @@ test('setup-logs.sh calls ctech-ec2-agent s3-put, not the AWS CLI', () => {
 test('SSM path helpers used to publish this bucket exist', () => {
   assert.equal(SSM.ec2ScriptsAlpine('prod').bucket, '/ctech/prod/ec2-scripts-alpine/bucket');
 });
+
+// A 1 GB root has room for two releases side by side, not for a stale zip too
+// (ctech-billing's 2026-10-12 deploy failed with "disk full"): the downloaded
+// zip is deleted once unpacked, and a leftover one before the next download.
+test('setup-deploy.sh deletes the downloaded release zip once it is unpacked', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
+  const unzip = body.indexOf('unzip -o /tmp/release.zip');
+  assert.ok(unzip > 0);
+  assert.match(body.slice(unzip), /rm -f \/tmp\/release\.zip/);
+  // and a leftover one goes before the download, so two never coexist
+  assert.ok(body.indexOf('rm -f /tmp/release.zip') < unzip);
+});

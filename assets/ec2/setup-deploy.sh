@@ -36,8 +36,12 @@ RELEASE_DIR="/opt/app/releases/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RELEASE_DIR"
 
 echo "Downloading release: $S3_KEY"
+rm -f /tmp/release.zip
 aws s3 cp "s3://__BUCKET__/$S3_KEY" /tmp/release.zip
 unzip -o /tmp/release.zip -d "$RELEASE_DIR"
+# The zip is not kept: on a small root (1 GB on Alpine) a stale zip beside two
+# releases is what fills the disk.
+rm -f /tmp/release.zip
 for b in __BINARIES__; do chmod +x "$RELEASE_DIR/$b"; done
 chown -R webapp:webapp "$RELEASE_DIR"
 ln -sfT "$RELEASE_DIR" /opt/app/current
