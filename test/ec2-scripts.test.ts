@@ -304,3 +304,12 @@ test('setup-deploy.sh deletes the downloaded release zip once it is unpacked', (
   // and a leftover one goes before the download, so two never coexist
   assert.ok(body.indexOf('rm -f /tmp/release.zip') < unzip);
 });
+
+// A deploy that died mid-unzip leaves a partial release directory; with a
+// small root it makes the next deploy fail too. Before downloading, every
+// release but the current one is removed (one kept for rollback).
+test('setup-deploy.sh prunes every release but the current one before downloading', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8')
+  const prune = body.indexOf('readlink -f /opt/app/current')
+  assert.ok(prune > 0 && prune < body.indexOf('/tmp/release.zip'))
+})

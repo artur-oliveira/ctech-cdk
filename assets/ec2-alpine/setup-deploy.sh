@@ -23,6 +23,16 @@ S3_KEY="${1:?deploy.sh: S3 key required}"
 RELEASE_DIR="/opt/app/releases/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RELEASE_DIR"
 
+# Keep only the release being served (rollback is the previous deploy's
+# artifact, not a second unpacked copy): a deploy that died mid-unzip leaves a
+# partial directory that, on a small root, would make this one fail too.
+CURRENT="$(readlink -f /opt/app/current 2>/dev/null || true)"
+for d in /opt/app/releases/*/; do
+  d="${d%/}"
+  [ -d "$d" ] || continue
+  [ "$d" = "$CURRENT" ] || [ "$d" = "$RELEASE_DIR" ] || rm -rf "$d"
+done
+
 echo "Downloading release: $S3_KEY"
 rm -f /tmp/release.zip
 ctech-ec2-agent s3-cp -bucket __BUCKET__ -key "$S3_KEY" -dest /tmp/release.zip
