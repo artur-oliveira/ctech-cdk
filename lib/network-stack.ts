@@ -48,6 +48,11 @@ export class NetworkStack extends cdk.Stack {
       ],
     });
 
+    // Services pin their ASGs to one AZ but the VPC keeps every subnet. Keep the
+    // subnet exports alive: CloudFormation refuses to delete an export a
+    // consumer stack (e.g. Valkey) still imports while it is being updated.
+    this.vpc.publicSubnets.forEach(subnet => this.exportValue(subnet.subnetId));
+
     // One shared private namespace. It is owned by prod so future environments
     // can be associated with this same zone instead of creating another $0.50/mo
     // hosted zone. The zone is retained if the production network stack is removed.
