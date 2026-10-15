@@ -7,7 +7,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Environment} from './types';
-import {SSM} from './constants';
+import {PINNED_AZ, SSM} from './constants';
 import {addAsgSchedule, AsgScheduleProps} from './haproxy-ec2-service';
 import {addSwapCommands} from './ec2-userdata-fragments';
 
@@ -229,11 +229,9 @@ export class ValkeyStackV2 extends cdk.Stack {
     const asg = new autoscaling.AutoScalingGroup(this, 'ValkeyASG', {
       autoScalingGroupName: `${environment}-ctech-valkey-v2`,
       vpc,
-      // t4g is unavailable in us-east-1e. Keep the VPC subnet there for
-      // workloads that support it, but never offer it to this ASG.
-      vpcSubnets: {
-        subnets: vpc.publicSubnets.filter(subnet => subnet.availabilityZone !== 'us-east-1e'),
-      },
+      // Pinned to one AZ (no inter-AZ transfer cost); also keeps it out of
+      // us-east-1e, where t4g is unavailable.
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC, availabilityZones: [PINNED_AZ]},
       launchTemplate,
       capacityRebalance: false,
       updatePolicy: autoscaling.UpdatePolicy.rollingUpdate({

@@ -9,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
+import {PINNED_AZ} from './constants';
 
 export interface HaproxyRouteRegistrationProps {
   parameterName: string;
@@ -303,7 +304,7 @@ export class HaproxyEc2Service extends Construct {
     this.autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'AutoScalingGroup', {
       autoScalingGroupName: props.asgName,
       vpc: props.vpc,
-      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC, availabilityZones: [PINNED_AZ]},
       launchTemplate: props.onDemand ? this.launchTemplate : undefined,
       // Userdata (env files, bootstrap) only runs at launch, so a launch template
       // change must replace running instances — otherwise they keep the old env

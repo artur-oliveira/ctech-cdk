@@ -4,6 +4,10 @@ export const DEFAULT_AWS_ACCOUNT = '868899309401';
 export const DEFAULT_AWS_REGION = 'us-east-1';
 export const DEFAULT_CERTIFICATE_ARN = 'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
 export const DEFAULT_GITHUB_REPO = 'artur-oliveira/ctech-cdk';
+// Every t4g ASG is pinned to one AZ: avoids EC2 Inter-AZ data transfer charges
+// (HAProxy <-> backends <-> cache). Tradeoff: no AZ failover. Lift it (use all
+// non-1e public subnets again) if an AZ outage or capacity issue becomes a problem.
+export const PINNED_AZ = 'us-east-1b';
 export const SSM = {
   global: {
     oidcProviderArn: '/ctech/global/oidc/provider-arn',

@@ -62,8 +62,8 @@ test('keeps one instance in prod, matching ValkeyStack today', () => {
   });
 });
 
-test('excludes us-east-1e from the t4g ASG while retaining the VPC subnet', () => {
+test('pins the ASG to a single AZ (no inter-AZ transfer)', () => {
   const {template} = synth();
   const [asg] = Object.values(template.findResources('AWS::AutoScaling::AutoScalingGroup'));
-  assert.equal(asg.Properties.VPCZoneIdentifier.length, 5);
+  assert.equal(asg.Properties.VPCZoneIdentifier.length, 1);
 });

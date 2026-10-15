@@ -13,7 +13,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 
 import {Environment} from './types';
-import {SSM} from './constants';
+import {PINNED_AZ, SSM} from './constants';
 import {addAsgSchedule, AsgScheduleProps} from './haproxy-ec2-service';
 import {buildCloudWatchAgentConfig} from './cloudwatch-agent-config';
 import {Ec2ScriptRunner} from './ec2-script-runner';
@@ -447,7 +447,7 @@ export class DragonflyStack extends cdk.Stack {
     const asg = new autoscaling.AutoScalingGroup(this, 'DragonflyASG', {
       autoScalingGroupName: asgName,
       vpc,
-      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC, availabilityZones: [PINNED_AZ]},
       launchTemplate,
       minCapacity: 1,
       maxCapacity: 1,
