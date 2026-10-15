@@ -1,6 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import {IpProtocol} from 'aws-cdk-lib/aws-ec2';
+import {IpProtocol, VpcEndpointIpAddressType} from 'aws-cdk-lib/aws-ec2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
@@ -79,9 +79,11 @@ export class NetworkStack extends cdk.Stack {
 
     this.vpc.addGatewayEndpoint('S3Endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
+      ipAddressType: VpcEndpointIpAddressType.DUALSTACK,
     });
     this.vpc.addGatewayEndpoint('DynamoDbEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+      ipAddressType: VpcEndpointIpAddressType.DUALSTACK,
     });
 
     // Compatibility name: this SG is now the edge identity attached to
