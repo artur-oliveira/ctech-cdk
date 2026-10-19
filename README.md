@@ -11,12 +11,12 @@ AWS CDK (TypeScript) for shared, account-level CTech infrastructure and the
 
 This is a shared foundation library consumed by every CTech service — treat every change here (defaults, IAM,
 health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local tweak.
-Confirmed consumers today: `ctech-account/cdk`, `ctech-wallet/cdk`, `ctech-dfe/cdk`, `ctech-poker/cdk` (all pinned
-`^0.8.0`). `ctech-billing` does not consume this package (Terraform).
+Confirmed consumers today: `ctech-account/cdk`, `ctech-wallet/cdk`, `ctech-dfe/cdk`, `ctech-poker/cdk` (pinned `0.10.2`;
+`ctech-dfe` `^0.10.2`). `ctech-billing` does not consume this package (Terraform).
 
 The deployed platform owns the dual-stack VPC, GitHub Actions OIDC provider,
-shared S3 buckets, the production private hosted zone, and the shared Dragonfly
-cache. Public and private API ingress is provided by
+shared S3 buckets, the production private hosted zone, and the shared Valkey
+cache (`ValkeyStackV2`). Public and private API ingress is provided by
 [ctech-lbalancer](https://github.com/artur-oliveira/ctech-lbalancer), not by an
 AWS Application Load Balancer.
 
@@ -46,7 +46,7 @@ Ctech-{Env}-Ec2Scripts
   └── /ctech/{env}/ec2-scripts/{bucket,version}
 
 Ctech-{Env}-ValkeyV2
-  ├── ValkeyStackV2 (Alpine/OpenRC) on an EC2 Auto Scaling Group, t4g.nano/micro spot
+  ├── ValkeyStackV2 (Alpine/OpenRC) on an EC2 Auto Scaling Group, t4g.nano On-Demand
   ├── desired/min/max = 1/1/1 in every environment
   ├── boots from an AMI resolved from /ctech/{env}/ami/alpine/arm64
   └── cache.internal.aoctech.app + /ctech/{env}/valkey/url
@@ -102,7 +102,7 @@ configuration, and updates the Cloudflare origin AAAA record.
 | `/ctech/{env}/network/alb-sg-id` | Compatibility name for the shared edge SG |
 | `/ctech/{env}/s3/deployments-bucket` | Shared deployment-artifact bucket |
 | `/ctech/{env}/s3/logs-bucket` | Shared application-log archive bucket |
-| `/ctech/{env}/valkey/url` | Cache base URL (now Dragonfly); consumers append their DB number |
+| `/ctech/{env}/valkey/url` | Cache base URL (Valkey, `ValkeyStackV2`); consumers append their DB number |
 | `/ctech/{env}/ec2-scripts/bucket` | Bucket holding the shared EC2 bootstrap scripts |
 | `/ctech/{env}/ec2-scripts/version` | Content hash of `assets/ec2`, and the S3 key prefix the scripts live under |
 | `/ctech/{env}/alerts/topic-arn` | Shared alert topic every service publishes its own failures to |
@@ -117,7 +117,7 @@ the current entrypoint does not deploy `AlbStack` and therefore does not write
 npm install @aoctech/cdk
 ```
 
-Source version 0.9.0 exports from `lib/index.ts`:
+Source version 0.10.2 exports from `lib/index.ts`:
 
 - `Environment`, `SSMParams`;
 - `SSM`, `DEFAULT_AWS_ACCOUNT`, `DEFAULT_AWS_REGION`;
@@ -186,7 +186,7 @@ this ships, rather than keeping two copies in the family.
 
 1. Land a green change on `main`.
 2. Bump `package.json` using semver.
-3. Create release/tag `vX.Y.Z` matching the bumped `package.json` version (current published version is `v0.9.0`; consumers pin `^0.8.0`).
+3. Create release/tag `vX.Y.Z` matching the bumped `package.json` version (latest tag is `v0.10.2`; consumers pin `0.10.2`/`^0.10.2`).
 4. `.github/workflows/publish.yml` publishes with npm trusted publishing and
    provenance; no `NPM_TOKEN` is stored.
 5. Upgrade consumers deliberately and run their synths.
@@ -236,6 +236,10 @@ contracts and must remain public. Dev/stage private URLs require their VPC to
 be associated with the private hosted zone before use.
 
 ## Alerts
+
+Policy: CDK is frozen (no new constructs; Terraform is the future). Alerts go only through this SNS topic; no
+custom CloudWatch metrics and no CloudWatch alarms. `@aoctech/ui` should absorb what products copied locally
+(ctech-billing `docs/specs/2026-10-17-ui-upstream-proposals.md`).
 
 One SNS topic per environment, `ctech-{env}-alerts`, with a single confirmed
 e-mail subscription. Every service publishes its own failures to it through

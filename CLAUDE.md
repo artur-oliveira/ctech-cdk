@@ -12,8 +12,19 @@ Account-level AWS CDK and the published `@aoctech/cdk` package.
 
 This is a shared foundation library consumed by every CTech service's own `cdk/` folder — treat every change here
 (defaults, IAM, health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local
-tweak. Confirmed consumers today (`package.json` pins as of this audit, all `^0.8.0`): `ctech-account/cdk`,
-`ctech-wallet/cdk`, `ctech-dfe/cdk`, `ctech-poker/cdk`. `ctech-billing` does not consume this package (Terraform).
+tweak. Confirmed consumers today (`package.json` on 2026-10-19; current version `0.10.2`): `ctech-account/cdk`,
+`ctech-wallet/cdk`, `ctech-poker/cdk` (exact `0.10.2`) and `ctech-dfe/cdk` (`^0.10.2`). `ctech-billing` does not consume this package (Terraform).
+
+## Family policy (from `ctech-dev-standards`)
+
+- **CDK is frozen**: no new shared constructs and no migrations; Terraform is the destination for new infra
+  (ctech-billing is the model). Fix defects in place only.
+- **Alerts** only through the shared SNS topic `ctech-{env}-alerts` (`AlertsStack`) published by go-common
+  `api-commons/alerts`. No custom CloudWatch metrics (`PutMetricData`, EMF, MetricFilter) and no CloudWatch alarms.
+- No NAT Gateway, no ALB, `allowedSubSuffixes` explicit (never `['*']`), and renaming/removing an SSM path is a
+  breaking change across repos (kept below).
+- `@aoctech/ui` (ctech-ui) must absorb what the products copied locally; see ctech-billing
+  `docs/specs/2026-10-17-ui-upstream-proposals.md`.
 
 ## CTech Family — Cross-Repo Awareness (IMPORTANT)
 
@@ -52,12 +63,11 @@ A fix scoped to only this repo, for a problem that is actually systemic across t
 - `ValkeyStackV2` (`lib/valkey-stack-v2.ts`, Alpine/OpenRC): **the currently
   active cache stack** (`bin/ctech-cdk.ts:130-141`, uncommented), publishing
   `/ctech/{env}/valkey/url` and `cache.internal.aoctech.app`, booting from an
-  AMI resolved from `/ctech/{env}/ami/alpine/arm64`. The surrounding code
-  comment still says "staged... do not uncomment until
-  `docs/plans/2026-08-23-alpine-ec2-ami.md` Task 13's pre-cutover validation
-  has passed" — that comment is now stale (or the cutover happened without
-  updating it); verify Task 13 was actually completed before trusting this as
-  validated-in-prod.
+  AMI resolved from `/ctech/{env}/ami/alpine/arm64`. It is instantiated
+  unconditionally (`new ValkeyStackV2(...)` in `bin/ctech-cdk.ts`). The code
+  comment above it in `bin/ctech-cdk.ts` ("staged... do not uncomment") is
+  obsolete and misleading; ignore it (fixing it needs a code change, left
+  out of this docs cleanup).
 
 The original `ValkeyStack` (`lib/valkey-stack.ts`) and `DragonflyStack`
 (`lib/dragonfly-stack.ts`) both exist but are **not instantiated** —
@@ -173,10 +183,9 @@ been verified and a major-version removal is planned.
   ephemeral cache/pub-sub and account for replacement outages. Its flags are
   sized for 512 MiB of RAM; see README before changing `--maxmemory`,
   `--proactor_threads` or `--dbnum`.
-- `ValkeyStack` is the active cache stack; `lib/dragonfly-stack.ts` is not
-  instantiated. Deploying Dragonfly in an environment again would require
-  deleting the Valkey stack there first (not currently planned — see
-  "Source of truth").
+- `ValkeyStackV2` is the active cache stack; `lib/dragonfly-stack.ts` and
+  `lib/valkey-stack.ts` are not instantiated. Only one cache stack may exist
+  per environment (see "Source of truth").
 - The deployments bucket expires objects after 30 days.
 - The application-log archive bucket is retained and has no expiration; any
   lifecycle change requires a retention decision.
@@ -205,13 +214,13 @@ directly for Terraform callers (`ctech-billing`, `ctech-lbalancer`), same
 positional-argument contract as their `assets/ec2/*.sh` counterparts. Nothing
 requires a service to migrate; AL2023 stays fully supported.
 
-## Alpine AMI pipeline (staged)
+## Alpine AMI pipeline
 
 A Packer pipeline builds a custom Alpine ARM64 AMI, meant to eventually replace
 AL2023 minimal on new EC2 launch templates at a fraction of the root volume
 size (target `rootVolumeGiB: 1`, see the spec for the disk budget). Not yet
-consumed by any deployed stack — `ValkeyStackV2` is the first consumer, staged
-but commented out in `bin/ctech-cdk.ts`.
+consumed by any deployed stack — `ValkeyStackV2` is the first consumer and is
+active in `bin/ctech-cdk.ts`.
 
 - `packer/alpine-arm64.pkr.hcl`: builds from Alpine's official AWS cloud image
   (owner `538276064493`), installs `amazon-ssm-agent`/`amazon-ssm-agent-openrc`,
