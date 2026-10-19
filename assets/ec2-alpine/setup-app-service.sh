@@ -22,10 +22,20 @@ if [ -f /etc/app-static.env ]; then set -a; . /etc/app-static.env; set +a; fi
 if [ -f /opt/app/current/release.env ]; then set -a; . /opt/app/current/release.env; set +a; fi
 if [ -f /opt/app/load-ssm-env.sh ]; then set -a; . /opt/app/load-ssm-env.sh; set +a; fi
 if [ -f /opt/app/service-env.sh ]; then . /opt/app/service-env.sh; fi
+# A ceiling on Go-managed memory, set only when nothing above chose one (a service
+# that sets GOMEMLIMIT in service-env.sh keeps its own). 75% of RAM split across the
+# app processes on this box, leaving the rest for nginx, the agents and the kernel:
+# near it the garbage collector works harder instead of the process growing until the
+# OOM killer picks it. It is a limit, not a target; a process below it is unaffected.
+if [ -z "${GOMEMLIMIT:-}" ]; then
+  GOMEMLIMIT="$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) * 3 / 4 / __APP_PROCS__ ))KiB"; export GOMEMLIMIT
+fi
 if [ -n "${PORT_OVERRIDE:-}" ]; then PORT="$PORT_OVERRIDE"; export PORT; fi
 exec /opt/app/current/__BINARY__
 START
-sed -i "s|__BINARY__|${BINARY}|g" /opt/app/start.sh
+APP_PROCS=1
+if [ -n "$ALT_PORT" ]; then APP_PROCS=2; fi
+sed -i -e "s|__BINARY__|${BINARY}|g" -e "s|__APP_PROCS__|${APP_PROCS}|g" /opt/app/start.sh
 chmod 0755 /opt/app/start.sh
 
 cat > /etc/init.d/app << 'SVC'

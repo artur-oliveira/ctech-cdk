@@ -41,6 +41,17 @@ http {
 
     log_format json_log escape=json '{"remote_addr":"$remote_addr","status":$status,"request":"$request","body_bytes_sent":$body_bytes_sent,"request_time":$request_time,"upstream_response_time":"$upstream_response_time"}';
 
+    # What reaches CloudWatch from access.log: errors (4xx/5xx) and slow requests
+    # (>= 1 s). Every request is still written to access-full.log, which logrotate
+    # ships to S3 with the rest of /var/log/nginx. The app's own access log already
+    # carries every request, so CloudWatch keeps full per-request coverage for the
+    # price of the failures: ingestion is billed per GB and 2xx is nearly all of it.
+    map "$status:$request_time" $notable {
+        default 0;
+        ~^[45]  1;
+        ~^[0-9]+:[1-9][0-9]*\.  1;
+    }
+
     sendfile on;
     tcp_nopush on;
     tcp_nodelay on;
@@ -100,7 +111,8 @@ __APP_PORT_ALT_LINE__
     server {
         listen __NGINX_PORT__ default_server reuseport;
         server_name _;
-        access_log /var/log/nginx/access.log json_log;
+        access_log /var/log/nginx/access-full.log json_log;
+        access_log /var/log/nginx/access.log json_log if=$notable;
         error_log /var/log/nginx/error.log;
 
         include /etc/nginx/conf.d/location-*.conf;
