@@ -147,3 +147,24 @@ test('setup-deploy.sh prunes every release but the current one before downloadin
   const prune = body.indexOf('readlink -f /opt/app/current')
   assert.ok(prune > 0 && prune < body.indexOf('/tmp/release.zip'))
 })
+
+// CloudWatch gets the failures and the slow requests; every request still lands in
+// access-full.log, which logrotate ships to S3 with the rest of /var/log/nginx.
+test('setup-nginx.sh ships only notable requests to access.log and keeps every one in access-full.log', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-nginx.sh'), 'utf8');
+  assert.match(body, /access_log \/var\/log\/nginx\/access-full\.log json_log;/);
+  assert.match(body, /access_log \/var\/log\/nginx\/access\.log json_log if=\$notable;/);
+  assert.match(body, /map "\$status:\$request_time" \$notable/);
+  assert.doesNotMatch(body, /access_log \/var\/log\/nginx\/access\.log json_log;/);
+});
+
+// A ceiling for Go-managed memory, only when the service did not choose one.
+test('setup-app-service.sh gives start.sh a GOMEMLIMIT that a service-env.sh value overrides', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-app-service.sh'), 'utf8');
+  assert.match(body, /if \[ -z "\$\{GOMEMLIMIT:-\}" \]; then/);
+  assert.ok(
+    body.indexOf('service-env.sh ]; then') < body.indexOf('GOMEMLIMIT="$(('),
+    'the default must come after service-env.sh so a service-provided value wins',
+  );
+  assert.match(body, /APP_PROCS=2/);
+});
