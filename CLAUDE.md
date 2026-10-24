@@ -64,10 +64,7 @@ A fix scoped to only this repo, for a problem that is actually systemic across t
   active cache stack** (`bin/ctech-cdk.ts:130-141`, uncommented), publishing
   `/ctech/{env}/valkey/url` and `cache.internal.aoctech.app`, booting from an
   AMI resolved from `/ctech/{env}/ami/alpine/arm64`. It is instantiated
-  unconditionally (`new ValkeyStackV2(...)` in `bin/ctech-cdk.ts`). The code
-  comment above it in `bin/ctech-cdk.ts` ("staged... do not uncomment") is
-  obsolete and misleading; ignore it (fixing it needs a code change, left
-  out of this docs cleanup).
+  unconditionally (`new ValkeyStackV2(...)` in `bin/ctech-cdk.ts`).
 
 The original `ValkeyStack` (`lib/valkey-stack.ts`) and `DragonflyStack`
 (`lib/dragonfly-stack.ts`) both exist but are **not instantiated** —
@@ -191,6 +188,16 @@ been verified and a major-version removal is planned.
   lifecycle change requires a retention decision.
 - Do not consolidate services or downsize instances from CPU data alone.
   Memory, connections, boot headroom, and failure blast radius are required.
+
+## Shared nginx and Go runtime defaults
+
+All in the shared scripts (`assets/ec2*/setup-nginx.sh`, `setup-app-service.sh`), so services adopt them by
+upgrading `@aoctech/cdk`, not by copying:
+
+- `GOMEMLIMIT`: `start.sh` sets 75% of RAM divided by the app processes unless `service-env.sh` already set it.
+- nginx access log: `access.log` (shipped to CloudWatch) keeps only 4xx/5xx and requests of 1 s or more; the
+  full log goes to `access-full.log` (S3). The health path is `access_log off`.
+- `client_max_body_size`: 5th argument of `setup-nginx.sh` (default `1m`; account 5m, dfe 20m).
 
 ## Adding a service
 
