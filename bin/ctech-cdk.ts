@@ -121,11 +121,8 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
 // })
 
 // =====================
-// ValkeyStackV2 (Alpine) — staged for the prod cutover in
-// docs/plans/2026-08-23-alpine-ec2-ami.md Task 13. Do not uncomment until
-// that task's pre-cutover validation has passed.
-//
-// import {ValkeyStackV2} from '../lib/valkey-stack-v2';
+// ValkeyStackV2 (Alpine): the live shared cache. Cutover plan:
+// docs/plans/2026-08-23-alpine-ec2-ami.md.
 new ValkeyStackV2(app, `Ctech-${cap(ENVIRONMENT)}-ValkeyV2`, {
   env,
   environment: ENVIRONMENT,
