@@ -14,6 +14,7 @@ This is a shared foundation library consumed by every CTech service's own `cdk/`
 (defaults, IAM, health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local
 tweak. Confirmed consumers today (`package.json` on 2026-10-19; current version `0.10.2`): `ctech-account/cdk`,
 `ctech-wallet/cdk`, `ctech-poker/cdk` (exact `0.10.2`) and `ctech-dfe/cdk` (`^0.10.2`). `ctech-billing` does not consume this package (Terraform).
+- **Standards gate:** `scripts/standards-check.sh` (canonical copy in ctech-skills, identical bytes; CI job "Family standards"; reads `FAMILY_GOCOMMON_MINOR`, default v1.38, bump it on a go-common minor). Debt hidden: STANDARDS_SKIP="custom metrics" (Dragonfly stack PutMetricData + cloudwatch.Alarm, move to go-common alerts). One-off lines carry a trailing `standards:allow <reason>`.
 
 ## Family policy (from `ctech-dev-standards`)
 
