@@ -14,7 +14,7 @@ This is a shared foundation library consumed by every CTech service's own `cdk/`
 (defaults, IAM, health checks, ASG/spot behavior, DynamoDB billing caps) as a cross-repo contract change, not a local
 tweak. Confirmed consumers today (`package.json` on 2026-10-19; current version `0.10.2`): `ctech-account/cdk`,
 `ctech-wallet/cdk`, `ctech-poker/cdk` (exact `0.10.2`) and `ctech-dfe/cdk` (`^0.10.2`). `ctech-billing` does not consume this package (Terraform).
-- **Standards gate:** `scripts/standards-check.sh` (canonical copy in ctech-skills, identical bytes; CI job "Family standards"; reads `FAMILY_GOCOMMON_MINOR`, default v1.38, bump it on a go-common minor). Debt hidden: STANDARDS_SKIP="custom metrics" (Dragonfly stack PutMetricData + cloudwatch.Alarm, move to go-common alerts). One-off lines carry a trailing `standards:allow <reason>`.
+- **Standards gate:** `scripts/standards-check.sh` (canonical copy in ctech-skills, identical bytes; CI job "Family standards"; reads `FAMILY_GOCOMMON_MINOR`, default v1.38, bump it on a go-common minor). One-off lines carry a trailing `standards:allow <reason>`.
 
 ## Family policy (from `ctech-dev-standards`)
 
@@ -67,11 +67,10 @@ A fix scoped to only this repo, for a problem that is actually systemic across t
   AMI resolved from `/ctech/{env}/ami/alpine/arm64`. It is instantiated
   unconditionally (`new ValkeyStackV2(...)` in `bin/ctech-cdk.ts`).
 
-The original `ValkeyStack` (`lib/valkey-stack.ts`) and `DragonflyStack`
-(`lib/dragonfly-stack.ts`) both exist but are **not instantiated** —
-commented out in `bin/ctech-cdk.ts:99-121`. Dragonfly was rolled back (no
-measured performance gain on a `t4g.nano`, commit `4ca03db`); Valkey (non-Alpine)
-was superseded by `ValkeyStackV2`. Neither should be re-enabled without
+The original `ValkeyStack` (`lib/valkey-stack.ts`) exists but is **not** instantiated
+(commented out in `bin/ctech-cdk.ts`); it was superseded by `ValkeyStackV2`. The
+Dragonfly stack was rolled back (no measured gain on a `t4g.nano`) and deleted.
+Do not re-enable `ValkeyStack` without
 re-checking which one owns `/ctech/{env}/valkey/url` in the target environment
 first — only one of the three cache stacks may be instantiated at a time, they
 all fight over the same SSM parameter and DNS record.
@@ -177,12 +176,7 @@ been verified and a major-version removal is planned.
 
 - No NAT Gateways.
 - S3/DynamoDB gateway endpoints are shared and free of hourly endpoint cost.
-- Dragonfly is a size-one `t4g.nano` ASG without persistence. Treat it as
-  ephemeral cache/pub-sub and account for replacement outages. Its flags are
-  sized for 512 MiB of RAM; see README before changing `--maxmemory`,
-  `--proactor_threads` or `--dbnum`.
-- `ValkeyStackV2` is the active cache stack; `lib/dragonfly-stack.ts` and
-  `lib/valkey-stack.ts` are not instantiated. Only one cache stack may exist
+- `ValkeyStackV2` is the active cache stack; `lib/valkey-stack.ts` is not instantiated. Only one cache stack may exist
   per environment (see "Source of truth").
 - The deployments bucket expires objects after 30 days.
 - The application-log archive bucket is retained and has no expiration; any
