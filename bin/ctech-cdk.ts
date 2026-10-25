@@ -86,27 +86,6 @@ new Ec2ScriptsStack(app, `Ctech-${cap(ENVIRONMENT)}-Ec2Scripts`, {
   description: `CTech Shared EC2 Bootstrap Scripts - ${ENVIRONMENT}`,
 });
 
-// =====================
-// Shared Dragonfly cache and pub/sub endpoint (EC2 ASG, private, one instance).
-// Replaces ValkeyStack and keeps its contract: same /ctech/{env}/valkey/url and
-// same cache.internal.aoctech.app record, so no service repository changes.
-//
-// The two stacks own the same parameter and the same DNS record, so they cannot
-// coexist. Cut over per environment by deleting the Valkey stack first:
-//   aws cloudformation delete-stack --stack-name Ctech-{Env}-Valkey
-//   ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Dragonfly
-// The cache is empty on both sides of that gap by design.
-// =====================
-// new DragonflyStack(app, `Ctech-${cap(ENVIRONMENT)}-Dragonfly`, {
-//   env,
-//   environment: ENVIRONMENT,
-//   vpc: networkStack.vpc,
-//   privateHostedZone: networkStack.privateHostedZone,
-//   // Nightly stop/start with the shared defaults (22:00–10:00 BRT down).
-//   schedule: {},
-//   description: `CTech Shared Dragonfly Cache - ${ENVIRONMENT}`,
-// });
-
 // Rollback to valkey, there's no performance gain on t4g.nano instances
 // new ValkeyStack(app, `Ctech-${cap(ENVIRONMENT)}-ValKey`, {
 //   env,

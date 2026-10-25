@@ -56,11 +56,8 @@ Only `GlobalStack`, `NetworkStack`, `S3Stack`, `Ec2ScriptsStack`,
 `AlertsStack` (conditional on `ALERT_EMAIL`), and `ValkeyStackV2` are
 instantiated by `bin/ctech-cdk.ts`. `lib/alb-stack.ts` and
 `PrivateIpv4Ec2Service` are retained as legacy migration code; neither
-represents the current production ingress architecture. `lib/dragonfly-stack.ts`
-and the original `lib/valkey-stack.ts` also exist but are **not** instantiated
-(commented out in `bin/ctech-cdk.ts`) — Dragonfly was rolled back (no measured
-performance gain on a `t4g.nano`) and the non-Alpine Valkey stack was
-superseded by `ValkeyStackV2`. Only one cache stack may be instantiated per
+represents the current production ingress architecture. The original `lib/valkey-stack.ts` also exists but is **not** instantiated
+(commented out in `bin/ctech-cdk.ts`); it was superseded by `ValkeyStackV2`. Only one cache stack may be instantiated per
 environment; see `CLAUDE.md` "Source of truth" before touching any of them.
 
 The SSM path `/ctech/{env}/network/alb-sg-id` and the physical security-group
@@ -264,88 +261,9 @@ The stack is skipped entirely when `ALERT_EMAIL` is unset — an address baked
 into source is one nobody notices is wrong. AWS sends a confirmation e-mail on
 first deploy and the subscription delivers nothing until it is accepted.
 
-## Shared cache (Dragonfly) — rolled back, not currently deployed
-
-**Status:** `DragonflyStack` is commented out in `bin/ctech-cdk.ts` and is not
-instantiated in any environment — it was rolled back for no measured
-performance gain on a `t4g.nano` (commit `4ca03db`). The currently active cache
-stack is `ValkeyStackV2` (Alpine/OpenRC); see "Current architecture" above and
-`CLAUDE.md` "Source of truth". This section is kept as reference for the flag
-choices below, which still apply if Dragonfly is ever revisited, but do not
-follow the deploy commands here without first checking which stack currently
-owns `/ctech/{env}/valkey/url` in the target environment.
-
-`DragonflyStack` replaces `ValkeyStack` and deliberately keeps its contract:
-the same `/ctech/{env}/valkey/url` parameter and the same
-`cache.internal.aoctech.app` record, so no service repository changes. The two
-stacks own the same parameter and the same record and cannot coexist. Cut over
-one environment at a time:
-
-```bash
-aws cloudformation delete-stack --stack-name Ctech-{Env}-Valkey
-ENVIRONMENT={env} npx cdk deploy Ctech-{Env}-Dragonfly
-```
-
-The cache is empty on both sides of that gap by design. `lib/valkey-stack.ts`
-is kept only so the previous template can still be read; nothing instantiates
-it.
-
-The binary is the official `dragonfly-aarch64` release, downloaded and verified
-against a SHA-256 pinned in `assets/dragonfly/install.sh` and republished as a
-CDK asset — the instance has no NAT and no public IPv4, so it can only fetch
-from S3. Version and digest live in that script rather than in TypeScript
-because the asset hash is the hash of the directory: editing the script is what
-invalidates the S3 object and versions the launch template.
-
-`install.sh` only downloads and verifies, so bundling runs directly on the synth
-host through CDK's `local` hook - the CI runner (`ubuntu-slim`) has no Docker
-daemon. The `amazonlinux:2023` container stays as the fallback for a host without
-`curl` or `tar`. When run locally the script honours `ASSET_OUTPUT_DIR`.
-
-Flag choices are driven by the 512 MiB t4g.nano:
-
-| Flag | Value | Why |
-| --- | --- | --- |
-| `--maxmemory` | `256mb` | Hard floor, not a sizing choice: Dragonfly exits with `There are 1 threads, so 256.00MiB are required` below 256 MiB per proactor thread. Dataset cap, not process RSS |
-| `--rss_oom_deny_ratio` | `0.7` | Denies OOM-prone writes at ~180 MiB RSS. The 1.25 default assumes a host sized for `--maxmemory`; on a 512 MiB nano it would feed the OOM killer |
-| `--proactor_threads` | `1` | Default is one per core; a second thread on a nano only buys a second set of arenas |
-| `--dbnum` | `8` | `/0` cache, `/1` ws pub/sub, `/2+` per service |
-| `--dbfilename` | empty | Disables the shutdown snapshot on a cache that is scaled to zero nightly |
-| `--cache_mode` | `true` | Evicts under pressure instead of failing writes; matches the previous `allkeys-lru` |
-| `--publish_buffer_limit` | `16mb` | Default is 196 MB per IO thread, and the hard limit is 4x the soft one |
-| `--pipeline_buffer_limit` | `32mb` | Default is 128 MB per IO thread |
-| `--pubsub_slow_subscriber_timeout_ms` | `5000` | Off by default; drops a subscriber that stopped draining instead of parking every publisher |
-
-Pub/Sub buffers are process memory and are **not** counted against
-`--maxmemory`. `ctech-go-common/ws` holds one `PSUBSCRIBE` connection per API
-instance (ctech-dfe websockets), so a single slow consumer is enough to reach
-those limits. It resubscribes on close, at the cost of the messages published
-during the gap - Pub/Sub is fire-and-forget either way.
-
-`--cache_mode` does not affect Pub/Sub: messages are not keyspace entries, and
-`PUBLISH` is not an OOM-denied command. It only decides what happens to keys at
-the cap - eviction, versus every write failing, including the wallet `SETNX`
-lock. On this box the binding limit is `--rss_oom_deny_ratio`, not the 256 MiB
-dataset cap: the real working set is around 64 MiB, so eviction at 256 MiB would
-never fire before the host ran out of RAM.
-
-The instance also gets 512 MiB of swap through `setup-swap.sh`. Without it the
-OOM killer picks the largest RSS — Dragonfly — and `Restart=always` brings it
-back empty, which presents as a healthy cache that silently lost everything.
-
-A boot that never gets a `PONG` within 60 seconds calls
-`autoscaling:SetInstanceHealth` on itself: the ASG health check is EC2-level
-and would otherwise keep an empty instance serving the DNS record. There is no
-scale-from-zero policy, because that needs a metric published while the cache
-is down and nothing in the organisation publishes one.
-
 ## Cost and resilience constraints
 
 - The VPC has zero NAT Gateways; workloads use IPv6 and free gateway endpoints.
-- Dragonfly intentionally remains one `t4g.nano` instance with no persistence
-  (`--dbfilename=`). It is a cache/pub-sub service, not a durable store.
-  Clustering/sharding is deferred because its operational complexity and extra
-  compute are not justified by the present traffic or SLO.
 - Production LBalancer intentionally remains one instance because Cloudflare's
   origin is one IPv6 address. Multiple nodes require a separate multi-origin or
   balancing strategy and would add cost without a demonstrated availability

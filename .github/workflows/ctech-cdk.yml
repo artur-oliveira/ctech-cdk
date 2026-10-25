@@ -22,9 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: bash scripts/standards-check.sh
-        env:
-          # baselined debt: Dragonfly stack custom metric + alarm (move to go-common alerts, then drop)
-          STANDARDS_SKIP: "custom metrics"
 
   diff:
     name: CDK Diff

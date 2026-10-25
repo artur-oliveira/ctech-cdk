@@ -21,8 +21,8 @@ interface ValkeyStackV2Props extends cdk.StackProps {
 /**
  * Alpine/OpenRC equivalent of ValkeyStack (lib/valkey-stack.ts), same
  * external contract: /ctech/{env}/valkey/url and cache.internal.aoctech.app.
- * The two cannot coexist — cut over the same way ValkeyStack/DragonflyStack
- * already do: delete the old stack, then deploy this one.
+ * The two cannot coexist — cut over the same way ValkeyStack
+ * did: delete the old stack, then deploy this one.
  */
 export class ValkeyStackV2 extends cdk.Stack {
   public readonly urlSsmPath: string;
