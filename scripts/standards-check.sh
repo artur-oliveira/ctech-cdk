@@ -47,7 +47,7 @@ wd=$(find . -type d \( -name worker -o -name 'lambda*' \) -not -path '*/node_mod
 
 # UI apps: no local copy of an @aoctech/ui export (a file named like one; wrappers/exceptions carry a `standards:allow <reason>` comment in the file).
 # ponytail: static name list = ctech-ui src/index.ts components; refresh it when ctech-ui exports a new component.
-UI_NAMES="Badge Button Alert Calendar DatePicker Checkbox EmptyState Field Input Modal Drawer PageHeader Separator Skeleton Radio RadioGroup Switch ThemeProvider ErrorState BottomNav UserMenu AppShell SidebarNav RowMenu Segmented Select SwipeRow Steps FileDrop CommandPalette NetworkProvider OfflineBanner UnavailableScreen"
+UI_NAMES="Badge Button Alert Calendar DatePicker Checkbox EmptyState Field Input Modal Drawer PageHeader Separator Skeleton Radio RadioGroup Switch ThemeProvider ErrorState BottomNav UserMenu AppShell SidebarNav RowMenu Segmented Select Textarea Label SwipeRow Steps FileDrop CommandPalette NetworkProvider OfflineBanner UnavailableScreen"
 for u in $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' -exec grep -l '"@aoctech/ui"' {} + 2>/dev/null | xargs -r -n1 dirname); do
   for f in $(find "$u/src" -type f \( -name '*.ts' -o -name '*.tsx' \) -not -name '*.test.*' -not -name '*.stories.*' -not -name '*.d.ts' 2>/dev/null \
       | awk -v n="$UI_NAMES" 'BEGIN{split(n,a," ");for(i in a)s[tolower(a[i])]=1}{b=$0;sub(/.*\//,"",b);sub(/\.tsx?$/,"",b);gsub(/[-_]/,"",b);if(tolower(b) in s)print}'); do
