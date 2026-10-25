@@ -7,7 +7,7 @@ FAMILY="${FAMILY_GOCOMMON_MINOR:-v1.38}"
 fail=0
 # STANDARDS_SKIP="apierror,Scan": known debt, comma list of words matched in a rule message; reported as warnings.
 bad() {
-  local w; for w in ${STANDARDS_SKIP//,/ }; do
+  local s="${STANDARDS_SKIP:-}" w; for w in ${s//,/ }; do
     [[ "$1" == *"$w"* ]] && { echo "::warning::standards (baselined): $1"; return; }
   done
   echo "::error::standards: $1"; fail=1
@@ -36,6 +36,24 @@ for d in $(find . -name go.mod -not -path '*/node_modules/*' -exec dirname {} \;
   grep_rule "log.Print*/Fatal* in $d; use slog" '\blog\.(Printf|Println|Print|Fatalf|Fatal|Panicf)\(' $(find "$d" -type d -name internal -not -path '*/node_modules/*')
   grep_rule "dynamodb Scan in $d; use a GSI (operator tools live under cmd/ and are exempt)" '\.Scan\(ctx|dynamodb\.ScanInput|ScanPaginator' \
     $(find "$d" -type d \( -path '*/internal/*' \) -maxdepth 3 2>/dev/null | grep -v '/cmd/')
+done
+
+# Worker code (worker/ and lambda*/ dirs) must not mint a root context: it arrives from internal/boot (cmd/, main.go, boot are exempt).
+wd=$(find . -type d \( -name worker -o -name 'lambda*' \) -not -path '*/node_modules/*' -not -path '*/cmd/*' -not -path '*/ui/*' 2>/dev/null)
+[ -n "$wd" ] && {
+  out=$(grep -rnE 'context\.(Background|TODO)\(\)' $wd --include='*.go' --exclude='*_test.go' --exclude=main.go --exclude-dir=cmd --exclude-dir=boot --exclude-dir=vendor 2>/dev/null | grep -v 'standards:allow')
+  [ -n "$out" ] && { echo "$out" | head -20; bad "ctxbg: context.Background/TODO in worker code; take the context from internal/boot"; }
+}
+
+# UI apps: no local copy of an @aoctech/ui export (a file named like one; wrappers/exceptions carry a `standards:allow <reason>` comment in the file).
+# ponytail: static name list = ctech-ui src/index.ts components; refresh it when ctech-ui exports a new component.
+UI_NAMES="Badge Button Alert Calendar DatePicker Checkbox EmptyState Field Input Modal Drawer PageHeader Separator Skeleton Radio RadioGroup Switch ThemeProvider ErrorState BottomNav UserMenu AppShell SidebarNav RowMenu Segmented Select SwipeRow Steps FileDrop CommandPalette NetworkProvider OfflineBanner UnavailableScreen"
+for u in $(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' -exec grep -l '"@aoctech/ui"' {} + 2>/dev/null | xargs -r -n1 dirname); do
+  for f in $(find "$u/src" -type f \( -name '*.ts' -o -name '*.tsx' \) -not -name '*.test.*' -not -name '*.stories.*' -not -name '*.d.ts' 2>/dev/null \
+      | awk -v n="$UI_NAMES" 'BEGIN{split(n,a," ");for(i in a)s[tolower(a[i])]=1}{b=$0;sub(/.*\//,"",b);sub(/\.tsx?$/,"",b);gsub(/[-_]/,"",b);if(tolower(b) in s)print}'); do
+    grep -q 'standards:allow' "$f" && continue
+    echo "$f"; bad "uidup: $f duplicates an @aoctech/ui export; import it (wrap with a standards:allow <reason> comment if intentional)"
+  done
 done
 
 # Infra: no hand-rolled metrics/alarms/NAT/ALB (ctech-cdk owns ALB stack)
