@@ -36,6 +36,12 @@ for d in $(find . -name go.mod -not -path '*/node_modules/*' -exec dirname {} \;
   grep_rule "log.Print*/Fatal* in $d; use slog" '\blog\.(Printf|Println|Print|Fatalf|Fatal|Panicf)\(' $(find "$d" -type d -name internal -not -path '*/node_modules/*')
   grep_rule "dynamodb Scan in $d; use a GSI (operator tools live under cmd/ and are exempt)" '\.Scan\(ctx|dynamodb\.ScanInput|ScanPaginator' \
     $(find "$d" -type d \( -path '*/internal/*' \) -maxdepth 3 2>/dev/null | grep -v '/cmd/')
+  # An allowed Scan must say it is an operator's: the service roles are denied dynamodb:Scan (poker's account purge
+  # scanned under an allow and failed in prod, erasure-purge-failed), so the exemption is only for code that cmd/
+  # runs with the operator's own credentials, never for anything a request or a queue consumer reaches.
+  out=$(grep -rnE --include='*.go' --exclude='*_test.go' --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.claude \
+    -e '\.Scan(Raw)?\(ctx|dynamodb\.ScanInput' "$d" 2>/dev/null | grep 'standards:allow' | grep -v 'standards:allow.*operator')
+  [ -n "$out" ] && { echo "$out" | head -20; bad "dynamodb Scan allowed in $d without 'operator' in the reason: the service role cannot Scan; allow it only for code cmd/ runs with operator credentials"; }
 done
 
 # Worker code (worker/ and lambda*/ dirs) must not mint a root context: it arrives from internal/boot (cmd/, main.go, boot are exempt).
