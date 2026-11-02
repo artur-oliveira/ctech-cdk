@@ -278,3 +278,15 @@ active in `bin/ctech-cdk.ts`.
 Every behavioral, architectural, configuration, deployment, security, or
 developer-workflow change must update the corresponding documentation in the
 same change.
+
+## KMS policy (shared scripts)
+
+The company KMS bill must stay ~0 (free tier 20k requests/month); an SSM SecureString read with
+decryption is a billed KMS `Decrypt`. `assets/ec2/setup-ssm-env.sh` and
+`assets/ec2-alpine/setup-ssm-env.sh` generate `/opt/app/load-ssm-env.sh`, which every service start
+AND every cron/timer job sources (billing `deliver` runs every minute). `_ctech_ssm` therefore reads
+without decryption first (ciphertext, no KMS call), hashes it, and decrypts only when it differs from
+the tmpfs cache in `/run/ctech-ssm` (RAM only, 0600), so a job costs zero KMS requests until a secret
+is rotated. It only uses `ssm-get -decrypt=false`, so it works with the `ctech-ec2-agent` already baked
+into the AMI. Any new periodic reader must follow the same rule (decrypt at boot, or version/hash check,
+or TTL >= 1h with the rotation latency stated). DynamoDB tables use `dynamoOwnedKey()`, buckets `S3_MANAGED`.
