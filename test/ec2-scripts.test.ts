@@ -97,6 +97,12 @@ test('setup-ssm-env.sh rejects an argument that is not VAR=/path', () => {
   assert.match(body, /printf '%s=\$\(_ctech_ssm %q\)/, 'paths must be shell-quoted with %q');
 });
 
+test('setup-ssm-env.sh decrypts a SecureString once per change, not on every cron run (KMS cost)', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
+  assert.match(body, /\/run\/ctech-ssm/, 'plaintext cached on tmpfs only');
+  assert.equal(body.match(/--with-decryption/g)?.length, 1, 'one decrypting read, after the ciphertext check');
+});
+
 test('setup-ssm-env.sh generates a loader read at service start, not at boot', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
   assert.match(body, /\/opt\/app\/load-ssm-env\.sh/);

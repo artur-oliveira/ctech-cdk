@@ -96,6 +96,13 @@ test('setup-ssm-env.sh calls ctech-ec2-agent ssm-get, not the AWS CLI', () => {
   assert.doesNotMatch(body, /aws ssm get-parameter/);
 });
 
+test('setup-ssm-env.sh decrypts a SecureString once per change, not on every cron run (KMS cost)', () => {
+  const body = readFileSync(path.join(ASSETS_DIR, 'setup-ssm-env.sh'), 'utf8');
+  assert.match(body, /ssm-get -decrypt=false -name/, 'ciphertext read first: no KMS call');
+  assert.match(body, /\/run\/ctech-ssm/, 'plaintext cached on tmpfs only');
+  assert.equal(body.match(/ssm-get -name/g)?.length, 1, 'one decrypting read, after the ciphertext check');
+});
+
 test('setup-deploy.sh calls ctech-ec2-agent s3-cp and reads the OpenRC log file, not journalctl', () => {
   const body = readFileSync(path.join(ASSETS_DIR, 'setup-deploy.sh'), 'utf8');
   assert.match(body, /ctech-ec2-agent s3-cp/);
