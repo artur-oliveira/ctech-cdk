@@ -19,11 +19,19 @@ source "amazon-ebs" "alpine_arm64" {
   # AWS AMI descriptions reject non-ASCII characters (no em dash).
   ami_description = "CTech Alpine ARM64 base image - amazon-ssm-agent + ctech-ec2-agent, no aws-cli, no CloudWatch Agent"
 
-  # Alpine's own official AWS cloud image, ARM64, most recent stable release.
+  # Alpine's own official AWS cloud image, ARM64, most recent release of ONE
+  # pinned series. The series is pinned on purpose: "alpine-*" matches every
+  # series Alpine still patches (3.22, 3.23, 3.24...) and most_recent orders by
+  # creation date, so whichever series got the last patch won. On 2026-11-03 that
+  # was 3.22.7 (published after 3.23.7), the base silently went from 3.23 to
+  # 3.22, and its amazon-ssm-agent (3.3.2471.0) predates UseDualStackEndpoint
+  # (3.3.3270.0): every instance of every service (no public IPv4) stopped
+  # registering with Systems Manager and the SSM RunCommand deploys failed.
+  # Moving to another series is a deliberate change of this line.
   # See https://alpinelinux.org/cloud/ for the current owner/name pattern.
   source_ami_filter {
     filters = {
-      name                = "alpine-*-aarch64-uefi-cloudinit-r0"
+      name                = "alpine-3.23.*-aarch64-uefi-cloudinit-r0"
       architecture        = "arm64"
       virtualization-type = "hvm"
       root-device-type    = "ebs"
@@ -78,7 +86,12 @@ build {
       # minimal, and every EC2 service on this AMI wants addSwapCommands
       # (lib/ec2-userdata-fragments.ts) to work — base-image concern, not
       # a per-service one.
-      "doas apk add --no-cache amazon-ssm-agent amazon-ssm-agent-openrc curl bash util-linux",
+      # amazon-ssm-agent >= 3.3.3270: the first release with UseDualStackEndpoint.
+      # These instances have no public IPv4 and reach Systems Manager only
+      # through the dual-stack endpoint; an older agent ignores the option, calls
+      # the IPv4 endpoint and never registers. apk fails the build if the
+      # repository cannot satisfy the constraint.
+      "doas apk add --no-cache 'amazon-ssm-agent>=3.3.3270' amazon-ssm-agent-openrc curl bash util-linux",
       "doas rc-update add amazon-ssm-agent default",
       # amazon-ssm-agent provisions its own "ssm-user" for Session Manager
       # shells, and on systemd distros configures it in sudoers itself —
