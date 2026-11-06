@@ -31,7 +31,7 @@ source "amazon-ebs" "alpine_arm64" {
   # See https://alpinelinux.org/cloud/ for the current owner/name pattern.
   source_ami_filter {
     filters = {
-      name                = "alpine-3.23.*-aarch64-uefi-cloudinit-r0"
+      name                = "alpine-3.24.*-aarch64-uefi-cloudinit-r0"
       architecture        = "arm64"
       virtualization-type = "hvm"
       root-device-type    = "ebs"
