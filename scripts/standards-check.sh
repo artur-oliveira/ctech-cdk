@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Ctech family standards gate. Canonical copy: ctech-skills/scripts/standards-check.sh.
 # Run from a repo root. Exempt one line with a trailing `standards:allow <reason>`.
-# Env: FAMILY_GOCOMMON_MINOR (default v1.39).
+# Env: FAMILY_GOCOMMON_MINOR (default v1.40).
 set -uo pipefail
-FAMILY="${FAMILY_GOCOMMON_MINOR:-v1.39}"
+FAMILY="${FAMILY_GOCOMMON_MINOR:-v1.40}"
 fail=0
 # STANDARDS_SKIP="apierror,Scan": known debt, comma list of words matched in a rule message; reported as warnings.
 bad() {
@@ -66,6 +66,19 @@ done
 grep_rule "custom metrics/alarms are banned; alert through go-common alerts" 'PutMetricData|MetricFilter|CloudWatch::Alarm|cloudwatch\.Alarm\(' . 
 case "$(basename "$PWD")" in ctech-cdk) ;; *)
   grep_rule "NAT gateway / ALB construct banned (cost rules)" 'NatGateway|natGateways|ApplicationLoadBalancer\(|aws_lb\b|aws_nat_gateway' cdk terraform infra ;;
+esac
+
+# Zero-idle-cost policy (references/infra.md, "Zero-idle cost"): nothing may bill while a service is idle.
+# KMS: DynamoDB and S3 use AWS-owned / SSE-S3 keys; a managed or customer key bills every cached-key refresh.
+grep_rule "KMS-billed encryption banned: DynamoDB uses the AWS-owned key (dynamoOwnedKey / no SSE block), S3 uses SSE-S3 (AES256)" \
+  'awsManagedKey\(|customerManagedKey\(|TableEncryption(V2)?\.(AWS_MANAGED|CUSTOMER_MANAGED)|BucketEncryption\.(KMS|KMS_MANAGED)|"aws:kms"|kms_key_arn|kms_master_key_id' cdk terraform infra lib bin api worker
+# SQS: a Lambda SqsEventSource long-polls 24/7 (2 pollers per queue, ~260k requests/month idle). Feed Lambdas from SNS/EventBridge/async invoke.
+grep_rule "SqsEventSource banned: it polls 24/7 even when idle; use an SNS Lambda subscription or async invoke with an on-failure destination" \
+  'SqsEventSource\(' cdk lib bin infra
+# SQS: an always-on in-process consumer must be idle-aware (go-common erasure.Consumer already is). A deliberate poller says so on the line.
+case "$(basename "$PWD")" in ctech-go-common) ;; *)
+  grep_rule "raw SQS ReceiveMessage loop: use go-common erasure.Consumer (idle-aware) or mark the line 'standards:allow <request budget per month>'" \
+    '\.ReceiveMessage\(' api worker cmd internal ;;
 esac
 
 # CI: checks must not be softened
